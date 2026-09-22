@@ -1,5 +1,5 @@
 import { registerUser } from "../services/registration.service.js";
-
+import { randomUUID } from "node:crypto";
 import {
   verifyFirstFactor,
 } from "../services/password-authentication.service.js";
@@ -7,6 +7,10 @@ import {
 import {
   consumeSourceAuthenticationSubmission,
 } from "../services/source-rate-limit.service.js";
+
+import {
+  createPasswordSecurityEvent,
+} from "../services/password-event-metadata.service.js";
 
 /**
  * POST /api/auth/register
@@ -102,6 +106,7 @@ export async function register(req, res) {
  */
 export async function verifyPasswordFactor(req, res) {
   const { username, password } = req.body ?? {};
+  const correlationId = randomUUID();
 
   try {
     // -------------------------------------------------------
@@ -149,7 +154,24 @@ export async function verifyPasswordFactor(req, res) {
         req.ip,
       );
 
-    if (!sourceStatus.allowed) {
+      if (!sourceStatus.allowed) {
+          const securityEvent =
+          createPasswordSecurityEvent({
+              eventType: "TEMPORARY_RESTRICTION",
+              outcome: "BLOCKED",
+              correlationId,
+              userId: null,
+          });
+
+        /*
+        * Integration point for Sathurshna's common logger:
+        *
+        * await recordSecurityEvent(securityEvent);
+        *
+        * userId is null because the source budget is checked
+        * before account verification.
+        */
+          void securityEvent;
       res.set(
         "Retry-After",
         String(sourceStatus.retryAfterSeconds),
@@ -174,7 +196,18 @@ export async function verifyPasswordFactor(req, res) {
     const result = await verifyFirstFactor({
       username,
       password,
+      correlationId,
     });
+
+    /*
+    * Integration point for Sathurshna's common logger:
+    *
+    * await recordSecurityEvent(result.securityEvent);
+    *
+    * Do not send securityEvent to the browser.
+    */
+    const securityEvent = result.securityEvent;
+    void securityEvent;
 
     if (!result.success) {
       if (

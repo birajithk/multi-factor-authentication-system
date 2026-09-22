@@ -1,5 +1,7 @@
 import pool from "../config/database.js";
-
+import {
+  createPasswordSecurityEvent,
+} from "./password-event-metadata.service.js";
 import { findUserByUsername } from "./user.service.js";
 
 import {
@@ -22,11 +24,21 @@ import {
  *
  * Public callers must not be able to distinguish these cases.
  */
-function authenticationFailure() {
+function authenticationFailure({
+  correlationId,
+  userId = null,
+}) {
   return {
     success: false,
     type: "AUTHENTICATION_FAILED",
     message: "Invalid username or password.",
+
+    securityEvent: createPasswordSecurityEvent({
+      eventType: "PASSWORD_AUTHENTICATION_FAILURE",
+      outcome: "FAILURE",
+      correlationId,
+      userId,
+    }),
   };
 }
 
@@ -34,13 +46,24 @@ function authenticationFailure() {
  * Result returned when the rolling password-failure
  * budget has already been exhausted.
  */
-function temporaryRestriction(retryAfterSeconds) {
+function temporaryRestriction({
+  retryAfterSeconds,
+  correlationId,
+  userId = null,
+}) {
   return {
     success: false,
     type: "TEMPORARILY_RESTRICTED",
     message:
       "Too many failed authentication attempts. Try again later.",
     retry_after_seconds: retryAfterSeconds,
+
+    securityEvent: createPasswordSecurityEvent({
+      eventType: "TEMPORARY_RESTRICTION",
+      outcome: "BLOCKED",
+      correlationId,
+      userId,
+    }),
   };
 }
 
@@ -57,6 +80,7 @@ function temporaryRestriction(retryAfterSeconds) {
 export async function verifyFirstFactor({
   username,
   password,
+  correlationId,
 }) {
   const suppliedPassword =
     typeof password === "string" ? password : "";
@@ -99,9 +123,14 @@ export async function verifyFirstFactor({
     if (!attemptStatus.allowed) {
       await client.query("COMMIT");
 
-      return temporaryRestriction(
-        attemptStatus.retryAfterSeconds,
-      );
+      return temporaryRestriction({
+      retryAfterSeconds:
+          attemptStatus.retryAfterSeconds,
+
+      correlationId,
+
+      userId: user?.user_id ?? null,
+      });
     }
 
     // -------------------------------------------------------
@@ -126,7 +155,10 @@ export async function verifyFirstFactor({
 
       await client.query("COMMIT");
 
-      return authenticationFailure();
+      return authenticationFailure({
+        correlationId,
+        userId: null,
+});
     }
 
     // -------------------------------------------------------
@@ -150,7 +182,10 @@ export async function verifyFirstFactor({
 
       await client.query("COMMIT");
 
-      return authenticationFailure();
+      return authenticationFailure({
+        correlationId,
+        userId: user.user_id,
+      });
     }
 
     // -------------------------------------------------------
@@ -174,7 +209,10 @@ export async function verifyFirstFactor({
 
       await client.query("COMMIT");
 
-      return authenticationFailure();
+      return authenticationFailure({
+        correlationId,
+        userId: user.user_id,
+    });
     }
 
     // -------------------------------------------------------
@@ -188,14 +226,21 @@ export async function verifyFirstFactor({
     await client.query("COMMIT");
 
     return {
-      success: true,
-      type: "PASSWORD_VERIFIED",
+    success: true,
+    type: "PASSWORD_VERIFIED",
 
-      account: {
+    account: {
         user_id: user.user_id,
         username: user.username,
         account_status: user.account_status,
-      },
+    },
+
+    securityEvent: createPasswordSecurityEvent({
+        eventType: "PASSWORD_AUTHENTICATION_SUCCESS",
+        outcome: "SUCCESS",
+        correlationId,
+        userId: user.user_id,
+    }),
     };
   } catch (error) {
     await client.query("ROLLBACK");
