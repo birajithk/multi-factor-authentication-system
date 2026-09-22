@@ -1,3 +1,4 @@
+import pool from "../config/database.js";
 import { createHash } from "node:crypto";
 
 const DEFAULT_SOURCE_LIMIT = 20;
@@ -164,4 +165,64 @@ export async function recordSourceSubmission(
     `,
     [sourceKey],
   );
+}
+
+/**
+ * Check and consume one authentication submission
+ * from a source address.
+ *
+ * The check and insert happen inside one transaction and are
+ * serialized per source so concurrent requests cannot bypass
+ * the configured limit.
+ */
+export async function consumeSourceAuthenticationSubmission(
+  sourceAddress,
+) {
+  const sourceKey = buildSourceKey(sourceAddress);
+
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    await lockSourceRateKey(
+      client,
+      sourceKey,
+    );
+
+    const status = await getSourceRateStatus(
+      client,
+      sourceKey,
+    );
+
+    if (!status.allowed) {
+      await client.query("COMMIT");
+
+      return {
+        allowed: false,
+        submissionCount: status.submissionCount,
+        submissionLimit: status.submissionLimit,
+        retryAfterSeconds: status.retryAfterSeconds,
+      };
+    }
+
+    await recordSourceSubmission(
+      client,
+      sourceKey,
+    );
+
+    await client.query("COMMIT");
+
+    return {
+      allowed: true,
+      submissionCount: status.submissionCount + 1,
+      submissionLimit: status.submissionLimit,
+      retryAfterSeconds: 0,
+    };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 }

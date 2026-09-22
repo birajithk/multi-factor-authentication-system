@@ -34,3 +34,37 @@ app.get("/api/health/db", async (req, res) => {
 });
 
 export default app;
+
+// ------------------------------------------------------------
+// Controlled request error handling
+// ------------------------------------------------------------
+
+app.use((error, req, res, next) => {
+  // express.json() reports malformed JSON as a 400 SyntaxError.
+  // Return controlled JSON instead of Express's development
+  // HTML stack trace.
+  if (
+    error instanceof SyntaxError &&
+    error.status === 400 &&
+    "body" in error
+  ) {
+    return res.status(400).json({
+      success: false,
+      error: {
+        type: "VALIDATION_ERROR",
+        message: "Request body contains invalid JSON.",
+      },
+    });
+  }
+
+  // Do not return stack traces or internal details to the client.
+  console.error("Unhandled request error:", error.message);
+
+  return res.status(500).json({
+    success: false,
+    error: {
+      type: "INTERNAL_ERROR",
+      message: "The request could not be completed.",
+    },
+  });
+});
