@@ -149,3 +149,23 @@ CREATE TABLE IF NOT EXISTS password_failure_events (
 
 CREATE INDEX IF NOT EXISTS idx_password_failure_events_retry_key_time
     ON password_failure_events(retry_key, failed_at DESC);
+
+
+-- ============================================================
+-- AUTHENTICATION SOURCE RATE EVENTS
+-- ============================================================
+
+-- Stores authentication submissions for the supplementary
+-- per-source rate budget.
+--
+-- source_key is a SHA-256-derived value based on the source
+-- address. The raw source address is not required in this table.
+
+CREATE TABLE IF NOT EXISTS authentication_source_events (
+    event_id BIGSERIAL PRIMARY KEY,
+    source_key TEXT NOT NULL,
+    submitted_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_authentication_source_events_key_time
+    ON authentication_source_events(source_key, submitted_at DESC);
