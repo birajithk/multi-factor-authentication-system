@@ -115,3 +115,13 @@ CREATE INDEX IF NOT EXISTS idx_sessions_user_id
 
 CREATE INDEX IF NOT EXISTS idx_sessions_expires_at
     ON sessions(expires_at);
+
+-- ============================================================
+-- CASE-INSENSITIVE USERNAME UNIQUENESS
+-- ============================================================
+
+-- Usernames are treated as case-insensitive by SecureByte.
+-- The application stores normalized lowercase usernames, and
+-- this index ensures the database also rejects case variants.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_normalized_unique
+    ON users (LOWER(username));
