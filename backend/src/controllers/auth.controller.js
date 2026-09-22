@@ -83,7 +83,10 @@ export async function register(req, res) {
       next_step: "AUTHENTICATOR_ENROLLMENT",
     });
   } catch (error) {
-    console.error("Registration failed:", error);
+    console.error(
+        "Registration failed:",
+        error
+    );
 
     return res.status(500).json({
       success: false,
