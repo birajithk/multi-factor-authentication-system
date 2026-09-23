@@ -1,7 +1,9 @@
 node_modules/
 .env
 *.log
+coverage/
 dist/
+.DS_Store
 pnpm-lock.yaml
 pnpm-workspace.yaml
 SecureByte_Complete_Member_Workflows.pdf

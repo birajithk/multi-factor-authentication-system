@@ -115,3 +115,57 @@ CREATE INDEX IF NOT EXISTS idx_sessions_user_id
 
 CREATE INDEX IF NOT EXISTS idx_sessions_expires_at
     ON sessions(expires_at);
+
+-- ============================================================
+-- CASE-INSENSITIVE USERNAME UNIQUENESS
+-- ============================================================
+
+-- Usernames are treated as case-insensitive by SecureByte.
+-- The application stores normalized lowercase usernames, and
+-- this index ensures the database also rejects case variants.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_normalized_unique
+    ON users (LOWER(username));
+
+
+-- ============================================================
+-- PASSWORD AUTHENTICATION FAILURE EVENTS
+-- ============================================================
+
+-- Stores failed first-factor attempts so the password retry
+-- budget survives page refreshes, new tabs, and server restarts.
+--
+-- retry_key is:
+--   user:<user_id>              for an existing account
+--   unknown:<sha256 digest>     for an unknown username
+--
+-- Unknown usernames are therefore not stored directly here.
+
+CREATE TABLE IF NOT EXISTS password_failure_events (
+    failure_id BIGSERIAL PRIMARY KEY,
+    retry_key TEXT NOT NULL,
+    user_id UUID REFERENCES users(user_id) ON DELETE CASCADE,
+    failed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_password_failure_events_retry_key_time
+    ON password_failure_events(retry_key, failed_at DESC);
+
+
+-- ============================================================
+-- AUTHENTICATION SOURCE RATE EVENTS
+-- ============================================================
+
+-- Stores authentication submissions for the supplementary
+-- per-source rate budget.
+--
+-- source_key is a SHA-256-derived value based on the source
+-- address. The raw source address is not required in this table.
+
+CREATE TABLE IF NOT EXISTS authentication_source_events (
+    event_id BIGSERIAL PRIMARY KEY,
+    source_key TEXT NOT NULL,
+    submitted_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_authentication_source_events_key_time
+    ON authentication_source_events(source_key, submitted_at DESC);
