@@ -1,5 +1,6 @@
 node_modules/
 .env
 *.log
-coverage/
 dist/
+pnpm-lock.yaml
+pnpm-workspace.yaml
