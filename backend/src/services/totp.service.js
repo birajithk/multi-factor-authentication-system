@@ -8,24 +8,13 @@ import {
 import { crypto } from "@otplib/plugin-crypto-node";
 import { base32 } from "@otplib/plugin-base32-scure";
 
-/*
- * otplib v13 option names:
- *
- * - t0 is the RFC 6238 start time (Unix time 0).
- * - epoch is the CURRENT time in seconds and defaults to
- *   Date.now(). It must not be fixed, otherwise every code is
- *   calculated for 1970 and never changes.
- * - epochTolerance replaces the old "window" option.
- *   30 seconds = current time-step ± one time-step.
- */
 const TOTP_CONFIG = {
     crypto,
     base32,
     algorithm: "sha1",
     digits: 6,
-    period: 30,
-    t0: 0,
-    epochTolerance: 30
+    step: 30,
+    window: 1
 };
 
 /**
@@ -54,12 +43,12 @@ export async function generateTOTPCode(secret) {
 /**
  * Verify a TOTP code.
  *
- * epochTolerance = 30:
+ * window = 1:
  * current 30-second time-step ± one time-step.
  *
  * A valid result includes timeStep, the exact RFC 6238
- * time-step the code matched. Callers must use it (not the
- * current server step) for replay protection.
+ * time-step the code matched. Callers must use it
+ * for replay protection.
  */
 export async function verifyTOTPCode(secret, token) {
     return await verify({
