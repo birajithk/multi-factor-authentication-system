@@ -1,0 +1,36 @@
+:root {
+  --surface: #f7f4ed;
+  --panel: #fffdf8;
+  --ink: #172a3a;
+  --muted: #5d686e;
+  --line: #d9d5ca;
+  --line-strong: #9ba19b;
+  --accent: #c34b2c;
+  --accent-dark: #8b301f;
+  --soft-accent: #f3dfd2;
+  --focus: #117a8b;
+  --shadow: #e4d5c4;
+  --sans: 'Trebuchet MS', 'Segoe UI', sans-serif;
+  --heading: Georgia, 'Times New Roman', serif;
+
+  font: 16px/1.5 var(--sans);
+  color: var(--muted);
+  background: var(--surface);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-width: 320px;
+  margin: 0;
+}
+
+p {
+  margin: 0;
+}
