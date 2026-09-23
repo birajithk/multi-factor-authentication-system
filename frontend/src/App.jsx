@@ -5,10 +5,63 @@ function App() {
   const [screen, setScreen] = useState('login')
   const [showPassword, setShowPassword] = useState(false)
   const [status, setStatus] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   const navigateTo = (nextScreen) => {
     setScreen(nextScreen)
     setStatus('')
+    setShowPassword(false)
+  }
+
+  const submitAuth = async (event) => {
+    event.preventDefault()
+    setIsSubmitting(true)
+    setStatus('')
+
+    const formData = new FormData(event.currentTarget)
+    const endpoint = screen === 'register' ? '/api/auth/register' : '/api/auth/password'
+    const payload = {
+      username: formData.get('username'),
+      password: formData.get('password'),
+    }
+
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(payload),
+      })
+      const body = await response.json().catch(() => ({}))
+
+      if (screen === 'register') {
+        if (response.status === 201) {
+          setStatus('Account created. Continue with authenticator enrollment.')
+        } else if (response.status === 409 && body.code === 'DUPLICATE_USERNAME') {
+          setStatus('That username is already in use.')
+        } else if (response.status === 400 && body.code === 'VALIDATION_ERROR') {
+          setStatus(body.message || 'Check your username and password and try again.')
+        } else {
+          setStatus('We could not create your account. Try again.')
+        }
+      } else if (response.status === 200 && body.code === 'PASSWORD_VERIFIED') {
+        const nextStep = body.next_step
+        setStatus(nextStep ? `Password verified. Next step: ${nextStep}.` : 'Password verified. Continue to the next step.')
+      } else if (response.status === 429 && body.code === 'TEMPORARILY_RESTRICTED') {
+        const retryAfter = body.retry_after_seconds
+        setStatus(retryAfter ? `Too many attempts. Try again in ${retryAfter} seconds.` : 'Too many attempts. Try again later.')
+      } else if (response.status === 400 && body.code === 'VALIDATION_ERROR') {
+        setStatus(body.message || 'Check your username and password and try again.')
+      } else if (response.status === 401) {
+        setStatus('Invalid username or password.')
+      } else {
+        setStatus('Unable to continue. Try again.')
+      }
+    } catch {
+      setStatus('Unable to reach the authentication service. Try again.')
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   const copySetupKey = async () => {
@@ -28,9 +81,18 @@ function App() {
       title: 'Sign in to SecureByte',
       description: 'Use your password first. The next step will ask for your authenticator code.',
       action: 'Continue to verification',
-      footer: 'Need to restore your authenticator?',
-      footerAction: 'Start recovery',
-      footerTarget: 'recovery',
+      footer: 'New to SecureByte?',
+      footerAction: 'Create an account',
+      footerTarget: 'register',
+    },
+    register: {
+      eyebrow: 'Create your account',
+      title: 'Start with SecureByte',
+      description: 'Create an account with a strong password, then enroll your authenticator.',
+      action: 'Create account',
+      footer: 'Already have an account?',
+      footerAction: 'Return to sign in',
+      footerTarget: 'login',
     },
     recovery: {
       eyebrow: 'Authenticator recovery',
@@ -77,12 +139,7 @@ function App() {
             <p>{currentScreen.description}</p>
           </div>
 
-          <form
-            onSubmit={(event) => {
-              event.preventDefault()
-              setStatus('This form is ready for the agreed backend response contract.')
-            }}
-          >
+          <form onSubmit={submitAuth}>
             <div className="field-group">
               <label htmlFor="username">Username</label>
               <input id="username" name="username" type="text" autoComplete="username" required />
@@ -132,7 +189,9 @@ function App() {
               </div>
             )}
 
-            <button className="primary-button" type="submit">{currentScreen.action}</button>
+            <button className="primary-button" type="submit" disabled={isSubmitting}>
+              {isSubmitting ? 'Checking...' : currentScreen.action}
+            </button>
           </form>
 
           <p className="form-footer">
