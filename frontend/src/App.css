@@ -3,6 +3,21 @@
   background: var(--surface);
 }
 
+.skip-link {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 10;
+  padding: 10px 14px;
+  color: #fff;
+  background: var(--ink);
+  transform: translateY(-150%);
+}
+
+.skip-link:focus {
+  transform: translateY(0);
+}
+
 .site-header,
 .site-footer,
 .workspace,
@@ -114,6 +129,11 @@
   line-height: 1.05;
 }
 
+.panel-heading h2:focus {
+  outline: 3px solid var(--focus);
+  outline-offset: 6px;
+}
+
 .panel-heading > p:last-child,
 .setup-preview p:last-child {
   color: var(--muted);
@@ -178,6 +198,11 @@ button {
   cursor: pointer;
 }
 
+button:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
 .primary-button {
   color: #fff;
   background: var(--ink);
@@ -218,8 +243,17 @@ button {
 .status-region {
   min-height: 24px;
   margin-top: 18px;
-  color: var(--accent-dark);
+  color: var(--ink);
   font-size: 0.82rem;
+}
+
+.status-success {
+  color: #17633a;
+}
+
+.status-error {
+  color: #8b2018;
+  font-weight: 700;
 }
 
 .setup-preview {
