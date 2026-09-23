@@ -84,8 +84,8 @@ export async function register(req, res) {
     });
   } catch (error) {
     console.error(
-        "Registration failed:",
-        error
+      "Registration failed:",
+      error.message
     );
 
     return res.status(500).json({
@@ -284,7 +284,7 @@ export async function verifyPasswordFactor(req, res) {
   } catch (error) {
     console.error(
       "Password authentication failed:",
-      error,
+      error.message
     );
 
     return res.status(500).json({
