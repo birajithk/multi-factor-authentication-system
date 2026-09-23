@@ -165,8 +165,8 @@ function App() {
       </section>
 
       <footer className="site-footer">
-        <span>SecureByte MFA</span>
-        <span>Frontend foundation for Lakshika G. 230370M</span>
+        <span></span>
+        <span></span>
       </footer>
     </main>
   )
