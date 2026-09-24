@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import {
     createTOTPSecret,
     generateTOTPURI,
@@ -20,8 +22,17 @@ import {
     PENDING_SCOPES,
     findPendingTransaction,
     deletePendingTransaction,
-    clearPendingCookie
+    clearPendingCookie,
+    setSessionCookie
 } from "../services/session.service.js";
+
+import {
+    completeTOTPLogin
+} from "../services/totp-login.service.js";
+
+import {
+    createSessionSecurityEvent
+} from "../services/session-event-metadata.service.js";
 
 /**
  * Load the ENROLLMENT pending transaction from its HttpOnly
@@ -258,6 +269,162 @@ export async function verifyTOTPEnrollment(
         return res.status(500).json({
             error:
                 "Unable to verify TOTP enrollment."
+        });
+    }
+}
+
+/**
+ * Hand one TOTP-login security event to the common logger.
+ *
+ * Never add TOTP codes, setup keys, or session tokens to the
+ * event.
+ */
+function recordTOTPSecurityEvent(securityEvent) {
+    /*
+     * Integration point for Sathurshna's common logger:
+     *
+     * await recordSecurityEvent(securityEvent);
+     *
+     * Do not send securityEvent to the browser.
+     */
+    void securityEvent;
+}
+
+/**
+ * POST /api/auth/totp
+ *
+ * Second factor of normal login.
+ *
+ * The account comes ONLY from the MFA_PENDING cookie created by
+ * password verification. Any user_id or username in the body is
+ * ignored.
+ *
+ * The full session cookie is set only after the database
+ * transaction has committed.
+ */
+export async function verifyTOTPLogin(req, res) {
+    const { token } = req.body ?? {};
+    const correlationId = randomUUID();
+
+    try {
+        if (
+            typeof token !== "string" ||
+            !/^\d{6}$/.test(token)
+        ) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    type: "VALIDATION_ERROR",
+                    field: "token",
+                    message:
+                        "Verification code must be exactly 6 digits."
+                }
+            });
+        }
+
+        const result = await completeTOTPLogin({
+            pendingToken: req.cookies?.[PENDING_COOKIE_NAME],
+            token
+        });
+
+        if (!result.success) {
+            if (result.type === "TEMPORARILY_RESTRICTED") {
+                recordTOTPSecurityEvent(
+                    createSessionSecurityEvent({
+                        eventType: "TEMPORARY_RESTRICTION",
+                        outcome: "BLOCKED",
+                        correlationId,
+                        userId: result.userId
+                    })
+                );
+
+                res.set(
+                    "Retry-After",
+                    String(result.retryAfterSeconds)
+                );
+
+                return res.status(429).json({
+                    success: false,
+                    error: {
+                        type: "TEMPORARILY_RESTRICTED",
+                        message:
+                            "Too many failed verification attempts. Try again later.",
+                        retry_after_seconds:
+                            result.retryAfterSeconds
+                    }
+                });
+            }
+
+            recordTOTPSecurityEvent(
+                createSessionSecurityEvent({
+                    eventType: "TOTP_VERIFICATION_FAILURE",
+                    outcome: "FAILURE",
+                    correlationId,
+                    userId: result.userId
+                })
+            );
+
+            if (result.type === "INVALID_CODE") {
+                // Fifth failure ended this pending transaction.
+                if (result.transactionEnded) {
+                    clearPendingCookie(res);
+                }
+
+                return res.status(401).json({
+                    success: false,
+                    error: {
+                        type: "AUTHENTICATION_FAILED",
+                        message: "Invalid verification code."
+                    }
+                });
+            }
+
+            // Missing, expired, used-up, or wrong-scope pending
+            // transaction, or the account is no longer ACTIVE.
+            clearPendingCookie(res);
+
+            return res.status(401).json({
+                success: false,
+                error: {
+                    type: "AUTHENTICATION_REQUIRED",
+                    message:
+                        "Sign-in session is missing or expired. Sign in again."
+                }
+            });
+        }
+
+        recordTOTPSecurityEvent(
+            createSessionSecurityEvent({
+                eventType: "TOTP_VERIFICATION_SUCCESS",
+                outcome: "SUCCESS",
+                correlationId,
+                userId: result.userId
+            })
+        );
+
+        // The transaction has committed; now issue the cookies.
+        setSessionCookie(res, result.sessionToken);
+        clearPendingCookie(res);
+
+        return res.status(200).json({
+            success: true,
+            result: "AUTHENTICATED",
+            next_step: "DASHBOARD"
+        });
+
+    } catch (error) {
+        console.error(
+            "TOTP login verification failed:",
+            error.message
+        );
+
+        return res.status(500).json({
+            success: false,
+            error: {
+                type: "INTERNAL_ERROR",
+                message:
+                    "Verification could not be completed."
+            }
         });
     }
 }
