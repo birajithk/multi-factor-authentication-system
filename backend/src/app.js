@@ -1,11 +1,14 @@
 import express from "express";
+import cookieParser from "cookie-parser";
 import pool from "./config/database.js";
+import sessionRoutes from "./routes/session.routes.js";
 import authRoutes from "./routes/auth.routes.js";
 import totpRoutes from "./routes/totp.routes.js";
 
 const app = express();
 
 app.use(express.json());
+app.use(cookieParser());
 
 app.use("/api/auth", authRoutes);
 app.use("/api/totp", totpRoutes);
@@ -38,6 +41,13 @@ app.get("/api/health/db", async (req, res) => {
         });
     }
 });
+
+// ------------------------------------------------------------
+// Full-session protected routes
+// (/api/dashboard, /api/session, /api/session/logout)
+// ------------------------------------------------------------
+
+app.use("/api", sessionRoutes);
 
 // ------------------------------------------------------------
 // Controlled request error handling
