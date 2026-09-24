@@ -101,6 +101,61 @@ CREATE TABLE IF NOT EXISTS sessions (
 
 
 -- ============================================================
+-- 4a. OPAQUE SESSION TOKENS
+-- ============================================================
+
+-- The browser receives a random opaque token in an HttpOnly
+-- cookie. Only the SHA-256 hash of that token is stored here,
+-- so a database read does not reveal usable session tokens.
+--
+-- ALTER ... IF NOT EXISTS keeps existing databases working when
+-- this file is applied again.
+
+-- pending_auth.scope:
+--   ENROLLMENT   -> may only enroll the authenticator
+--   MFA_PENDING  -> password verified, may only submit TOTP
+ALTER TABLE pending_auth
+    ADD COLUMN IF NOT EXISTS token_hash TEXT;
+
+ALTER TABLE pending_auth
+    ADD COLUMN IF NOT EXISTS scope VARCHAR(30)
+        CONSTRAINT pending_auth_scope_check
+        CHECK (scope IN ('ENROLLMENT', 'MFA_PENDING'));
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_pending_auth_token_hash_unique
+    ON pending_auth(token_hash);
+
+ALTER TABLE sessions
+    ADD COLUMN IF NOT EXISTS token_hash TEXT;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_token_hash_unique
+    ON sessions(token_hash);
+
+
+-- ============================================================
+-- 4b. SECOND-FACTOR FAILURE EVENTS
+-- ============================================================
+
+-- Stores failed second-factor attempts per account so the rule
+-- "5 failed attempts per account in a rolling 15 minutes"
+-- survives new pending MFA transactions (a new password login
+-- must not reset the second-factor budget).
+--
+-- Recovery-code failures (Sathurshna's recovery module) must
+-- record into this same table so TOTP and recovery codes share
+-- one second-factor budget.
+
+CREATE TABLE IF NOT EXISTS second_factor_failure_events (
+    failure_id BIGSERIAL PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    failed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_second_factor_failure_events_user_time
+    ON second_factor_failure_events(user_id, failed_at DESC);
+
+
+-- ============================================================
 -- INDEXES
 -- ============================================================
 
