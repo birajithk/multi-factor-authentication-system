@@ -42,6 +42,63 @@ export async function createTOTPRecord({
 }
 
 /**
+ * Store an encrypted TOTP credential, replacing one that has
+ * never been verified.
+ *
+ * This lets an interrupted enrollment restart with a fresh
+ * secret after the user signs in again. A credential that has
+ * already accepted a code (last_accepted_step IS NOT NULL) is
+ * never replaced.
+ *
+ * Returns null when a verified credential already exists.
+ */
+export async function upsertUnverifiedTOTPRecord({
+    userId,
+    encryptedSecret,
+    nonce,
+    authTag,
+    keyId
+}) {
+    const query = `
+        INSERT INTO totp_credentials (
+            user_id,
+            encrypted_secret,
+            nonce,
+            auth_tag,
+            key_id,
+            last_accepted_step
+        )
+        VALUES ($1, $2, $3, $4, $5, NULL)
+        ON CONFLICT (user_id) DO UPDATE
+        SET
+            encrypted_secret = EXCLUDED.encrypted_secret,
+            nonce = EXCLUDED.nonce,
+            auth_tag = EXCLUDED.auth_tag,
+            key_id = EXCLUDED.key_id,
+            updated_at = NOW()
+        WHERE totp_credentials.last_accepted_step IS NULL
+        RETURNING
+            user_id,
+            key_id,
+            last_accepted_step,
+            created_at,
+            updated_at
+    `;
+
+    const values = [
+        userId,
+        encryptedSecret,
+        nonce,
+        authTag,
+        keyId
+    ];
+
+    const result = await pool.query(query, values);
+
+    return result.rows[0] ?? null;
+}
+
+/**
  * Retrieve an encrypted TOTP credential.
  */
 export async function getTOTPRecord(userId) {

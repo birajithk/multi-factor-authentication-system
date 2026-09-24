@@ -1,8 +1,7 @@
 import {
     createTOTPSecret,
     generateTOTPURI,
-    verifyTOTPCode,
-    getCurrentTOTPStep
+    verifyTOTPCode
 } from "../services/totp.service.js";
 
 import {
@@ -11,37 +10,70 @@ import {
 } from "../services/encryption.service.js";
 
 import {
-    createTOTPRecord,
+    upsertUnverifiedTOTPRecord,
     getTOTPRecord,
     completeTOTPEnrollment
 } from "../services/totp.repository.js";
+
+import {
+    PENDING_COOKIE_NAME,
+    PENDING_SCOPES,
+    findPendingTransaction,
+    deletePendingTransaction,
+    clearPendingCookie
+} from "../services/session.service.js";
+
+/**
+ * Load the ENROLLMENT pending transaction from its HttpOnly
+ * cookie.
+ *
+ * This is the ONLY accepted identity for enrollment. Headers,
+ * body fields, MFA_PENDING tokens, and full sessions are not
+ * accepted, and the account must still be ENROLLING.
+ */
+async function loadEnrollmentTransaction(req) {
+    const pending = await findPendingTransaction(
+        req.cookies?.[PENDING_COOKIE_NAME],
+        PENDING_SCOPES.ENROLLMENT
+    );
+
+    if (
+        !pending ||
+        pending.account_status !== "ENROLLING"
+    ) {
+        return null;
+    }
+
+    return pending;
+}
+
+function enrollmentAuthenticationRequired(res) {
+    return res.status(401).json({
+        success: false,
+        error: {
+            type: "AUTHENTICATION_REQUIRED",
+            message:
+                "Enrollment session is missing or expired. Sign in again."
+        }
+    });
+}
+
 /**
  * Start TOTP enrollment.
  *
- * Temporary development authentication:
- * X-User-Id header identifies the test user.
- *
- * This will later be replaced by the authenticated
- * server-side session.
+ * Requires the ENROLLMENT pending cookie created by
+ * registration or by password login of an ENROLLING account.
  */
 export async function startTOTPEnrollment(req, res) {
     try {
-        const userId = req.headers["x-user-id"];
+        const pending =
+            await loadEnrollmentTransaction(req);
 
-        if (!userId) {
-            return res.status(401).json({
-                error: "User authentication required."
-            });
+        if (!pending) {
+            return enrollmentAuthenticationRequired(res);
         }
 
-        // Prevent duplicate TOTP credentials.
-        const existingCredential = await getTOTPRecord(userId);
-
-        if (existingCredential) {
-            return res.status(409).json({
-                error: "TOTP is already configured for this user."
-            });
-        }
+        const userId = pending.user_id;
 
         // Generate a new 160-bit TOTP secret.
         const secret = createTOTPSecret();
@@ -49,8 +81,13 @@ export async function startTOTPEnrollment(req, res) {
         // Encrypt the secret before storing it.
         const encrypted = encryptSecret(secret);
 
-        // Store encrypted secret in PostgreSQL.
-        await createTOTPRecord({
+        /*
+         * Store encrypted secret in PostgreSQL.
+         *
+         * An unverified credential from an interrupted enrollment
+         * is replaced. A verified credential is never replaced.
+         */
+        const stored = await upsertUnverifiedTOTPRecord({
             userId,
             encryptedSecret: encrypted.encryptedSecret,
             nonce: encrypted.nonce,
@@ -58,10 +95,17 @@ export async function startTOTPEnrollment(req, res) {
             keyId: encrypted.keyId
         });
 
+        if (!stored) {
+            return res.status(409).json({
+                error: "TOTP is already configured for this user."
+            });
+        }
+
         // Generate authenticator-compatible URI.
+        // The label is the username, not the internal user_id.
         const otpAuthUri = generateTOTPURI(
             secret,
-            userId,
+            pending.username,
             "SecureByte"
         );
 
@@ -92,20 +136,26 @@ export async function startTOTPEnrollment(req, res) {
 
 /**
  * Verify the TOTP code submitted during enrollment.
+ *
+ * Success activates the account but does NOT create a full
+ * session. The user must then sign in normally
+ * (password + TOTP).
  */
 export async function verifyTOTPEnrollment(
     req,
     res
 ) {
     try {
-        const userId = req.headers["x-user-id"];
-        const { token } = req.body;
+        const { token } = req.body ?? {};
 
-        if (!userId) {
-            return res.status(401).json({
-                error: "User authentication required."
-            });
+        const pending =
+            await loadEnrollmentTransaction(req);
+
+        if (!pending) {
+            return enrollmentAuthenticationRequired(res);
         }
+
+        const userId = pending.user_id;
 
         if (
             typeof token !== "string" ||
@@ -147,14 +197,12 @@ export async function verifyTOTPEnrollment(
         }
 
         /*
-         * Calculate the actual current TOTP time-step.
-         *
-         * We use the current server time because the enrollment
-         * verification is successful within the configured
-         * ±1-step window.
+         * Use the exact time-step the code matched
+         * (otplib VerifyResult.timeStep), not the current server
+         * step. Otherwise a code that matched the NEXT step
+         * (client clock ahead) could be replayed at login.
          */
-        const currentStep =
-            getCurrentTOTPStep();
+        const matchedStep = verification.timeStep;
 
         /*
          * Atomically:
@@ -166,7 +214,7 @@ export async function verifyTOTPEnrollment(
         const result =
             await completeTOTPEnrollment(
                 userId,
-                currentStep
+                matchedStep
             );
 
         if (!result.success) {
@@ -184,6 +232,16 @@ export async function verifyTOTPEnrollment(
                     "Unable to complete TOTP enrollment."
             });
         }
+
+        /*
+         * Enrollment is finished, so the enrollment scope ends.
+         * No full session is created here.
+         */
+        await deletePendingTransaction(
+            pending.transaction_id
+        );
+
+        clearPendingCookie(res);
 
         return res.status(200).json({
             message:
