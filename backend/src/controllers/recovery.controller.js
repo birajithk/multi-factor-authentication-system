@@ -1,7 +1,21 @@
 import { RecoveryService } from '../services/recovery.service.js';
+import { consumeSourceAuthenticationSubmission } from '../services/source-rate-limit.service.js';
 
 export const generateCodes = async (req, res) => {
     try {
+        const sourceStatus = await consumeSourceAuthenticationSubmission(req.ip);
+        if (!sourceStatus.allowed) {
+            res.set('Retry-After', String(sourceStatus.retryAfterSeconds));
+            return res.status(429).json({
+                success: false,
+                error: {
+                    type: 'TEMPORARILY_RESTRICTED',
+                    message: 'Too many authentication attempts. Try again later.',
+                    retry_after_seconds: sourceStatus.retryAfterSeconds
+                }
+            });
+        }
+
         // Assume user_id is injected by authentication middleware (e.g., req.user.user_id)
         const userId = req.user?.user_id;
         if (!userId) {
@@ -24,6 +38,19 @@ export const generateCodes = async (req, res) => {
 
 export const consumeCode = async (req, res) => {
     try {
+        const sourceStatus = await consumeSourceAuthenticationSubmission(req.ip);
+        if (!sourceStatus.allowed) {
+            res.set('Retry-After', String(sourceStatus.retryAfterSeconds));
+            return res.status(429).json({
+                success: false,
+                error: {
+                    type: 'TEMPORARILY_RESTRICTED',
+                    message: 'Too many authentication attempts. Try again later.',
+                    retry_after_seconds: sourceStatus.retryAfterSeconds
+                }
+            });
+        }
+
         const { recoveryCode } = req.body;
         const userId = req.user?.user_id;
 
