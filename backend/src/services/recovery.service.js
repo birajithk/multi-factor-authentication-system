@@ -125,6 +125,11 @@ export class RecoveryService {
             if (consumeResult.rowCount === 0) {
                 // Someone else consumed it concurrently
                 await client.query('ROLLBACK');
+                await SecurityLogger.logEvent({
+                    event_type: 'recovery_code_use',
+                    outcome: 'failure',
+                    user_id: userId
+                });
                 return false;
             }
 

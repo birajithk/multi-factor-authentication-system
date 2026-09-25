@@ -30,7 +30,7 @@ export const consumeCode = async (req, res) => {
         if (!userId) {
             return res.status(401).json({ success: false, error: { type: 'UNAUTHORIZED' } });
         }
-        if (!recoveryCode) {
+        if (typeof recoveryCode !== 'string' || recoveryCode.trim().length === 0) {
             return res.status(400).json({ success: false, error: { type: 'VALIDATION_ERROR', message: 'Recovery code is required' } });
         }
 

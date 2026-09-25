@@ -1,16 +1,13 @@
 import express from 'express';
 import { generateCodes, consumeCode } from '../controllers/recovery.controller.js';
-// Assume there's an authentication middleware that populates req.user
-// import { requireAuth } from '../middleware/auth.middleware.js';
+import { requireFullAuth, requirePendingAuth } from '../middleware/session.middleware.js';
 
 const router = express.Router();
 
 // Generate recovery codes (requires full session or enrollment session)
-// router.post('/generate', requireAuth, generateCodes);
-router.post('/generate', generateCodes);
+router.post('/generate', requireFullAuth, generateCodes);
 
 // Consume recovery code (requires pending auth after password check)
-// router.post('/consume', requireAuth, consumeCode);
-router.post('/consume', consumeCode);
+router.post('/consume', requirePendingAuth, consumeCode);
 
 export default router;
