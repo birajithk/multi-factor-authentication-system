@@ -2,6 +2,7 @@ import express from "express";
 import pool from "./config/database.js";
 import authRoutes from "./routes/auth.routes.js";
 import totpRoutes from "./routes/totp.routes.js";
+import recoveryRoutes from "./routes/recovery.routes.js";
 
 const app = express();
 
@@ -9,6 +10,7 @@ app.use(express.json());
 
 app.use("/api/auth", authRoutes);
 app.use("/api/totp", totpRoutes);
+app.use("/api/recovery", recoveryRoutes);
 
 app.get("/api/health", (req, res) => {
     res.status(200).json({
