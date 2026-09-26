@@ -5,6 +5,12 @@ import {
 } from "../services/password-authentication.service.js";
 
 import {
+  PENDING_SCOPES,
+  createPendingTransaction,
+  setPendingCookie,
+} from "../services/session.service.js";
+
+import {
   consumeSourceAuthenticationSubmission,
 } from "../services/source-rate-limit.service.js";
 
@@ -62,6 +68,30 @@ export async function register(req, res) {
       });
     }
 
+    /*
+     * Enrollment-only pending transaction (HttpOnly cookie).
+     *
+     * The ENROLLMENT scope permits authenticator enrollment only.
+     * It is not a full session and does not grant dashboard access.
+     *
+     * If it cannot be created, the account still exists, so the
+     * response stays 201. The user can sign in with the password
+     * to resume enrollment.
+     */
+    try {
+      const pendingToken = await createPendingTransaction({
+        userId: result.user.user_id,
+        scope: PENDING_SCOPES.ENROLLMENT,
+      });
+
+      setPendingCookie(res, pendingToken);
+    } catch (error) {
+      console.error(
+        "Enrollment transaction could not be created:",
+        error.message
+      );
+    }
+
     return res.status(201).json({
       success: true,
 
@@ -78,8 +108,8 @@ export async function register(req, res) {
        * It is NOT proof of authentication and does not grant
        * dashboard access.
        *
-       * The enrollment-only session itself will be integrated with
-       * Khamshayan/Abishek's session flow.
+       * The enrollment-only scope is carried by the pending cookie
+       * set above, never by this response body.
        */
       next_step: "AUTHENTICATOR_ENROLLMENT",
     });
@@ -243,22 +273,29 @@ export async function verifyPasswordFactor(req, res) {
     // 4. Determine the permitted next operation
     //
     // This does NOT create full authentication.
-    // Khamshayan/Abishek's shared controller/session integration
-    // must create the appropriate server-side restricted scope.
+    // Only a restricted pending scope is created, bound to the
+    // verified account server-side. A full session is created
+    // only after TOTP verification (POST /api/auth/totp).
     // -------------------------------------------------------
 
     let nextStep;
+    let pendingScope = null;
 
     switch (result.account.account_status) {
       case "ENROLLING":
+        // Lets an interrupted enrollment resume after login.
         nextStep = "AUTHENTICATOR_ENROLLMENT";
+        pendingScope = PENDING_SCOPES.ENROLLMENT;
         break;
 
       case "ACTIVE":
         nextStep = "TOTP_VERIFICATION";
+        pendingScope = PENDING_SCOPES.MFA_PENDING;
         break;
 
       case "RECOVERY_REQUIRED":
+        // Recovery belongs to Sathurshna's recovery module.
+        // No pending scope is created here.
         nextStep = "RECOVERY_CODE_VERIFICATION";
         break;
 
@@ -270,6 +307,16 @@ export async function verifyPasswordFactor(req, res) {
             message: "Invalid username or password.",
           },
         });
+    }
+
+    if (pendingScope) {
+      const pendingToken = await createPendingTransaction({
+        userId: result.account.user_id,
+        scope: pendingScope,
+      });
+
+      // user_id and the token never appear in the JSON body.
+      setPendingCookie(res, pendingToken);
     }
 
     return res.status(200).json({
