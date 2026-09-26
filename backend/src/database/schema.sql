@@ -224,3 +224,45 @@ CREATE TABLE IF NOT EXISTS authentication_source_events (
 
 CREATE INDEX IF NOT EXISTS idx_authentication_source_events_key_time
     ON authentication_source_events(source_key, submitted_at DESC);
+
+-- ============================================================
+-- RECOVERY CODES
+-- ============================================================
+CREATE TABLE IF NOT EXISTS recovery_codes (
+    code_id UUID PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    salt TEXT NOT NULL,
+    code_hash TEXT NOT NULL,
+    issued_time TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    used_time TIMESTAMPTZ,
+    revoked_time TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_recovery_codes_user_id
+    ON recovery_codes(user_id);
+
+-- ============================================================
+-- RECOVERY SESSIONS
+-- ============================================================
+CREATE TABLE IF NOT EXISTS recovery_sessions (
+    identifier_hash TEXT PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    scope VARCHAR(50) NOT NULL,
+    expiry TIMESTAMPTZ NOT NULL,
+    extension_count INTEGER NOT NULL DEFAULT 0
+);
+
+-- ============================================================
+-- SECURITY EVENTS
+-- ============================================================
+CREATE TABLE IF NOT EXISTS security_events (
+    event_id UUID PRIMARY KEY,
+    user_id UUID REFERENCES users(user_id) ON DELETE SET NULL,
+    event_type VARCHAR(100) NOT NULL,
+    utc_timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    outcome VARCHAR(50) NOT NULL,
+    correlation_id VARCHAR(100)
+);
+
+CREATE INDEX IF NOT EXISTS idx_security_events_timestamp
+    ON security_events(utc_timestamp DESC);

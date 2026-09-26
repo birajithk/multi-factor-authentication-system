@@ -1,3 +1,4 @@
+import db from "../config/database.js";
 import {
   SESSION_COOKIE_NAME,
   findActiveSession,
@@ -7,7 +8,7 @@ import {
  * Protected-resource guard.
  *
  * Only a full session (password + TOTP completed) passes.
- * The session is loaded from the database on EVERY request:
+ * The session is loaded from the database on EVERY request.
  *
  * - the cookie token hash must match a stored session,
  * - the session must not be revoked or expired,
@@ -61,6 +62,75 @@ export async function requireFullSession(req, res, next) {
 }
 
 /**
+ * Backwards-compatible name for existing controllers/routes.
+ *
+ * Existing code using requireFullAuth will now receive the
+ * secure cookie-backed full-session validation.
+ */
+export const requireFullAuth = requireFullSession;
+
+/**
+ * Pending authentication guard.
+ *
+ * Used only for flows that occur before full authentication,
+ * such as MFA enrollment/verification.
+ */
+export const requirePendingAuth = async (req, res, next) => {
+  try {
+    const transactionId = req.headers["x-pending-auth-id"];
+
+    if (
+      typeof transactionId !== "string" ||
+      transactionId.trim().length === 0
+    ) {
+      return res.status(401).json({
+        success: false,
+        error: {
+          type: "UNAUTHORIZED",
+        },
+      });
+    }
+
+    const result = await db.query(
+      `
+        SELECT user_id
+        FROM pending_auth
+        WHERE transaction_id = $1
+          AND expires_at > NOW()
+      `,
+      [transactionId.trim()]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(401).json({
+        success: false,
+        error: {
+          type: "UNAUTHORIZED",
+        },
+      });
+    }
+
+    req.user = {
+      user_id: result.rows[0].user_id,
+    };
+
+    return next();
+  } catch (error) {
+    console.error(
+      "Error in requirePendingAuth middleware:",
+      error.message
+    );
+
+    return res.status(500).json({
+      success: false,
+      error: {
+        type: "INTERNAL_ERROR",
+      },
+    });
+  }
+};
+
+/**
  * Simple CSRF defense for cookie-authenticated state changes.
  *
  * A cross-site HTML form can only send form/text content types.
@@ -84,4 +154,4 @@ export function requireJsonRequest(req, res, next) {
   }
 
   return next();
-}
+};

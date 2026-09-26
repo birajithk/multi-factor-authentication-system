@@ -17,6 +17,7 @@ import {
 import {
   createPasswordSecurityEvent,
 } from "../services/password-event-metadata.service.js";
+import { SecurityLogger } from "../services/security-logger.service.js";
 
 /**
  * POST /api/auth/register
@@ -196,15 +197,12 @@ export async function verifyPasswordFactor(req, res) {
               userId: null,
           });
 
-        /*
-        * Integration point for Sathurshna's common logger:
-        *
-        * await recordSecurityEvent(securityEvent);
-        *
-        * userId is null because the source budget is checked
-        * before account verification.
-        */
-          void securityEvent;
+          await SecurityLogger.logEvent({
+              event_type: securityEvent.eventType,
+              outcome: securityEvent.outcome,
+              correlation_id: securityEvent.correlationId,
+              user_id: securityEvent.userId,
+          });
       res.set(
         "Retry-After",
         String(sourceStatus.retryAfterSeconds),
@@ -232,15 +230,15 @@ export async function verifyPasswordFactor(req, res) {
       correlationId,
     });
 
-    /*
-    * Integration point for Sathurshna's common logger:
-    *
-    * await recordSecurityEvent(result.securityEvent);
-    *
-    * Do not send securityEvent to the browser.
-    */
     const securityEvent = result.securityEvent;
-    void securityEvent;
+    if (securityEvent) {
+        await SecurityLogger.logEvent({
+            event_type: securityEvent.eventType,
+            outcome: securityEvent.outcome,
+            correlation_id: securityEvent.correlationId,
+            user_id: securityEvent.userId,
+        });
+    }
 
     if (!result.success) {
       if (
