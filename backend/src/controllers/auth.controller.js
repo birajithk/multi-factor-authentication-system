@@ -277,6 +277,7 @@ export async function verifyPasswordFactor(req, res) {
     return res.status(200).json({
       success: true,
       result: "PASSWORD_VERIFIED",
+      user_id: result.account.user_id,
       account_status:
         result.account.account_status,
       next_step: nextStep,

@@ -60,6 +60,68 @@
   font-family: var(--heading);
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.narrator-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 6px 14px;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+}
+
+.narrator-toggle-btn.active {
+  color: #fff;
+  background: var(--ink);
+  border-color: var(--ink);
+}
+
+.narrator-toggle-btn:hover,
+.narrator-toggle-btn:focus-visible {
+  border-color: var(--focus);
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.heading-top-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.narrator-listen-btn {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 4px 10px;
+  color: var(--accent);
+  background: var(--soft-accent);
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.narrator-listen-btn:hover,
+.narrator-listen-btn:focus-visible {
+  color: #fff;
+  background: var(--accent);
+}
+
 .environment-label,
 .kicker {
   color: var(--accent);
@@ -254,6 +316,204 @@ button:disabled {
 .status-error {
   color: #8b2018;
   font-weight: 700;
+}
+
+/* ------------------------------------------------------------
+ * Screen-reader only utility
+ * ------------------------------------------------------------ */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ------------------------------------------------------------
+ * U11 Recovery Code Presentation & Confirmation Screen
+ * ------------------------------------------------------------ */
+.recovery-codes-container {
+  display: grid;
+  gap: 18px;
+  margin-top: 20px;
+}
+
+.recovery-warning-box {
+  padding: 14px 16px;
+  color: #5c1810;
+  background: #fdf2ef;
+  border: 1px solid #e0aba1;
+  border-left: 5px solid var(--accent);
+  border-radius: 4px;
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.recovery-actions-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.recovery-actions-toolbar .secondary-button {
+  flex: 1;
+  min-width: 140px;
+  min-height: 44px;
+}
+
+.recovery-codes-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  max-height: 280px;
+  padding: 10px;
+  margin: 0;
+  overflow-y: auto;
+  list-style: none;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+}
+
+.recovery-code-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+}
+
+.code-index {
+  color: var(--muted);
+  font-family: monospace;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.recovery-code-text {
+  flex: 1;
+  color: var(--ink);
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 0.86rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  user-select: all;
+  word-break: break-all;
+}
+
+.copy-single-btn {
+  min-width: 54px;
+  min-height: 44px;
+  padding: 6px 12px;
+  color: var(--ink);
+  background: var(--soft-accent);
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.copy-single-btn:hover,
+.copy-single-btn:focus-visible {
+  color: #fff;
+  background: var(--accent);
+}
+
+.acknowledgement-group {
+  padding: 8px 0;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  color: var(--ink);
+  font-size: 0.88rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.checkbox-label input[type='checkbox'] {
+  width: 20px;
+  height: 20px;
+  min-height: 20px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.continue-btn {
+  width: 100%;
+}
+
+.staged-login-note {
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+/* ------------------------------------------------------------
+ * Development Testing Helper Banner
+ * ------------------------------------------------------------ */
+.demo-test-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 12px;
+  margin-bottom: 4px;
+  background: #eef6f8;
+  border: 1px solid #bce1e8;
+  border-radius: 4px;
+  font-size: 0.82rem;
+}
+
+.demo-tag {
+  display: inline-block;
+  padding: 2px 6px;
+  color: #fff;
+  background: var(--focus);
+  border-radius: 3px;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.demo-code-text {
+  color: var(--ink);
+}
+
+.demo-code-text strong {
+  font-family: monospace;
+  font-size: 1rem;
+  letter-spacing: 0.1em;
+  color: var(--accent-dark);
+}
+
+.demo-fill-btn {
+  min-height: 36px;
+  padding: 4px 10px;
+  color: #fff;
+  background: var(--focus);
+  border: 0;
+  border-radius: 3px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.demo-fill-btn:hover,
+.demo-fill-btn:focus-visible {
+  background: var(--accent);
 }
 
 .setup-preview {

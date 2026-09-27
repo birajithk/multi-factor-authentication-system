@@ -20,6 +20,13 @@ export async function createTOTPRecord({
             last_accepted_step
         )
         VALUES ($1, $2, $3, $4, $5, NULL)
+        ON CONFLICT (user_id) DO UPDATE SET
+            encrypted_secret = EXCLUDED.encrypted_secret,
+            nonce = EXCLUDED.nonce,
+            auth_tag = EXCLUDED.auth_tag,
+            key_id = EXCLUDED.key_id,
+            last_accepted_step = NULL,
+            updated_at = NOW()
         RETURNING
             user_id,
             key_id,

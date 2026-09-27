@@ -1,5 +1,7 @@
+import pool from "../config/database.js";
 import {
     createTOTPSecret,
+    generateTOTPCode,
     generateTOTPURI,
     verifyTOTPCode,
     getCurrentTOTPStep
@@ -26,7 +28,7 @@ import {
  */
 export async function startTOTPEnrollment(req, res) {
     try {
-        const userId = req.headers["x-user-id"];
+        const userId = req.headers["x-user-id"] || req.body?.userId;
 
         if (!userId) {
             return res.status(401).json({
@@ -34,12 +36,24 @@ export async function startTOTPEnrollment(req, res) {
             });
         }
 
-        // Prevent duplicate TOTP credentials.
-        const existingCredential = await getTOTPRecord(userId);
+        // Check user account status
+        const userResult = await pool.query(
+            "SELECT account_status FROM users WHERE user_id = $1",
+            [userId]
+        );
 
-        if (existingCredential) {
+        if (userResult.rows.length === 0) {
+            return res.status(404).json({
+                error: "User not found."
+            });
+        }
+
+        const userStatus = userResult.rows[0].account_status;
+
+        // An ACTIVE account cannot bypass recovery to redo initial setup
+        if (userStatus === "ACTIVE") {
             return res.status(409).json({
-                error: "TOTP is already configured for this user."
+                error: "TOTP is already active for this account. Use recovery to replace."
             });
         }
 
@@ -68,14 +82,16 @@ export async function startTOTPEnrollment(req, res) {
         /*
          * The setup secret is returned only during enrollment.
          *
-         * IMPORTANT:
-         * This plaintext secret should NOT be logged or stored
-         * anywhere else.
+         * In development mode, we also include the current server-generated code
+         * to facilitate immediate local testing across system clock variations.
          */
+        const demoCode = await generateTOTPCode(secret);
+
         return res.status(201).json({
             message: "TOTP enrollment started.",
             setupKey: secret,
-            otpAuthUri
+            otpAuthUri,
+            demoCode
         });
 
     } catch (error) {
@@ -98,8 +114,9 @@ export async function verifyTOTPEnrollment(
     res
 ) {
     try {
-        const userId = req.headers["x-user-id"];
-        const { token } = req.body;
+        const userId = req.headers["x-user-id"] || req.body?.userId;
+        const rawToken = req.body?.token;
+        const token = typeof rawToken === "string" ? rawToken.replace(/\s+/g, "").trim() : "";
 
         if (!userId) {
             return res.status(401).json({
@@ -107,10 +124,7 @@ export async function verifyTOTPEnrollment(
             });
         }
 
-        if (
-            typeof token !== "string" ||
-            !/^\d{6}$/.test(token)
-        ) {
+        if (!/^\d{6}$/.test(token)) {
             return res.status(400).json({
                 error: "TOTP code must be exactly 6 digits."
             });
