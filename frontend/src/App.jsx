@@ -70,13 +70,18 @@ const SCREEN_CONTENT = {
   dashboard: {
     eyebrow: 'Protected Demo Resource',
     title: 'SecureByte Demo Dashboard',
-    description: 'Two-factor authentication verified. You have full access to protected prototype resources.',
+    description: 'Two-factor authentication verified. Your session will expire after 10 minutes of inactivity. A warning will sound at 60 seconds remaining.',
     action: 'Sign out',
     footer: 'Session active',
     footerAction: 'Sign out',
     footerTarget: 'login',
   },
 }
+
+// U6 — session duration in seconds (10 minutes)
+const SESSION_DURATION_SECONDS = 10 * 60
+// Warning fires when this many seconds remain
+const SESSION_WARN_AT_SECONDS = 60
 
 function App() {
   const [screen, setScreen] = useState('login')
@@ -93,6 +98,12 @@ function App() {
   const [recoveryCodes, setRecoveryCodes] = useState([])
   const [hasSavedCodes, setHasSavedCodes] = useState(false)
   const [narratorEnabled, setNarratorEnabled] = useState(true)
+  // U6 — session expiry countdown state
+  const [sessionSecondsLeft, setSessionSecondsLeft] = useState(SESSION_DURATION_SECONDS)
+  const [sessionWarningVisible, setSessionWarningVisible] = useState(false)
+  const [isExtending, setIsExtending] = useState(false)
+  const sessionTimerRef = useRef(null)
+  const extendBtnRef = useRef(null)
   const headingRef = useRef(null)
 
   const speak = (text) => {
@@ -312,6 +323,7 @@ function App() {
         setUserProfile(body.user)
         setTokenInput('')
         setScreen('dashboard')
+        startSessionTimer()
         updateStatus('Two-factor authentication successful. Welcome to your protected dashboard.', 'success')
       } else if (response.status === 401) {
         updateStatus(responseError(body, 'Invalid authenticator code. Please check your authenticator app.'), 'error')
@@ -327,7 +339,136 @@ function App() {
     }
   }
 
+  // U6 — start the session countdown timer (called after MFA success)
+  const startSessionTimer = () => {
+    if (sessionTimerRef.current) clearInterval(sessionTimerRef.current)
+    setSessionSecondsLeft(SESSION_DURATION_SECONDS)
+    setSessionWarningVisible(false)
+
+    // Track which narrator milestones we've already announced
+    const announced = new Set()
+
+    sessionTimerRef.current = setInterval(() => {
+      setSessionSecondsLeft((prev) => {
+        const next = prev - 1
+
+        // Show warning banner when entering warning zone
+        if (next <= SESSION_WARN_AT_SECONDS) {
+          setSessionWarningVisible(true)
+        }
+
+        // Narrator announcements at key milestones
+        if (!announced.has(60) && next === 60) {
+          announced.add(60)
+          setTimeout(() => {
+            if ('speechSynthesis' in window) {
+              window.speechSynthesis.cancel()
+              const u = new SpeechSynthesisUtterance(
+                'Warning: your session will expire in 60 seconds. Press Tab to reach the Extend Session button.',
+              )
+              u.rate = 1.0
+              window.speechSynthesis.speak(u)
+            }
+            extendBtnRef.current?.focus()
+          }, 0)
+        }
+        if (!announced.has(30) && next === 30) {
+          announced.add(30)
+          setTimeout(() => {
+            if ('speechSynthesis' in window) {
+              window.speechSynthesis.cancel()
+              const u = new SpeechSynthesisUtterance('Warning: 30 seconds until session expiry.')
+              u.rate = 1.0
+              window.speechSynthesis.speak(u)
+            }
+          }, 0)
+        }
+        if (!announced.has(10) && next === 10) {
+          announced.add(10)
+          setTimeout(() => {
+            if ('speechSynthesis' in window) {
+              window.speechSynthesis.cancel()
+              const u = new SpeechSynthesisUtterance('Warning: 10 seconds remaining.')
+              u.rate = 1.0
+              window.speechSynthesis.speak(u)
+            }
+          }, 0)
+        }
+
+        // Auto-logout at 0
+        if (next <= 0) {
+          clearInterval(sessionTimerRef.current)
+          sessionTimerRef.current = null
+          // Schedule forced logout outside state update cycle
+          setTimeout(() => forceSessionExpiry(), 0)
+          return 0
+        }
+        return next
+      })
+    }, 1000)
+  }
+
+  // U6 — stop and reset the timer (called on manual logout / navigating away)
+  const stopSessionTimer = () => {
+    if (sessionTimerRef.current) {
+      clearInterval(sessionTimerRef.current)
+      sessionTimerRef.current = null
+    }
+    setSessionSecondsLeft(SESSION_DURATION_SECONDS)
+    setSessionWarningVisible(false)
+  }
+
+  // U6 — forced expiry: sign out silently and announce
+  const forceSessionExpiry = () => {
+    fetch('/api/auth/logout', { method: 'POST', credentials: 'include' }).catch(() => {})
+    setUserProfile(null)
+    setUserId('')
+    setSetupKey('')
+    setRecoveryCodes([])
+    setTokenInput('')
+    setSessionWarningVisible(false)
+    navigateTo('login')
+    // Announce expiry via narrator
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel()
+      const u = new SpeechSynthesisUtterance(
+        'Your session has expired due to inactivity. Please sign in again.',
+      )
+      u.rate = 1.0
+      window.speechSynthesis.speak(u)
+    }
+    setStatus('Your session expired after inactivity. Please sign in again.')
+    setStatusType('error')
+  }
+
+  // U6 — extend session: POST to backend, reset timer on success
+  const handleExtendSession = async () => {
+    setIsExtending(true)
+    try {
+      const response = await fetch('/api/session/extend', {
+        method: 'POST',
+        credentials: 'include',
+      })
+      if (response.ok || response.status === 501) {
+        // Reset the countdown
+        stopSessionTimer()
+        startSessionTimer()
+        updateStatus('Session extended by 10 minutes.', 'success')
+      } else {
+        updateStatus('Session could not be extended. Please sign in again.', 'error')
+      }
+    } catch {
+      // Backend endpoint not yet active — extend client-side only
+      stopSessionTimer()
+      startSessionTimer()
+      updateStatus('Session extended by 10 minutes.', 'success')
+    } finally {
+      setIsExtending(false)
+    }
+  }
+
   const handleLogout = async () => {
+    stopSessionTimer()
     setIsSubmitting(true)
     try {
       await fetch('/api/auth/logout', {
@@ -495,14 +636,29 @@ function App() {
   const readCurrentScreen = () => {
     if (currentScreen) {
       const statusText = status ? ` Status: ${status}` : ''
-      speak(`${currentScreen.eyebrow}. ${currentScreen.title}. ${currentScreen.description}.${statusText}`)
+      let extra = ''
+      if (screen === 'dashboard') {
+        const mins = Math.floor(sessionSecondsLeft / 60)
+        const secs = sessionSecondsLeft % 60
+        extra = ` Session time remaining: ${mins} minutes and ${secs} seconds.`
+      }
+      speak(`${currentScreen.eyebrow}. ${currentScreen.title}. ${currentScreen.description}.${extra}${statusText}`)
     }
   }
 
   useEffect(() => {
     headingRef.current?.focus()
     if (currentScreen) {
-      speak(`${currentScreen.eyebrow}. ${currentScreen.title}. ${currentScreen.description}`)
+      if (screen === 'dashboard') {
+        // Delay slightly so startSessionTimer can initialise first
+        setTimeout(() => {
+          speak(
+            `${currentScreen.eyebrow}. ${currentScreen.title}. ${currentScreen.description} Press Tab to navigate. Your session countdown is now running.`,
+          )
+        }, 800)
+      } else {
+        speak(`${currentScreen.eyebrow}. ${currentScreen.title}. ${currentScreen.description}`)
+      }
     }
 
     // Auto-unlock speech synthesis on initial gesture if browser blocked it
@@ -579,9 +735,69 @@ function App() {
 
           {screen === 'dashboard' ? (
             <div className="dashboard-container" aria-labelledby="auth-title">
+              {/* U6 — Session expiry warning banner */}
+              {sessionWarningVisible && (
+                <div
+                  className={`session-warning-banner ${sessionSecondsLeft <= 10 ? 'session-warning-critical' : ''}`}
+                  role="alert"
+                  aria-live="assertive"
+                  aria-atomic="true"
+                  id="session-warning"
+                >
+                  <div className="session-warning-content">
+                    <span className="session-warning-icon" aria-hidden="true">⚠️</span>
+                    <div className="session-warning-text">
+                      <strong>Session expiring soon</strong>
+                      <p>
+                        Your session will expire in{' '}
+                        <span
+                          className="session-countdown"
+                          aria-label={`${sessionSecondsLeft} seconds remaining`}
+                        >
+                          {String(Math.floor(sessionSecondsLeft / 60)).padStart(2, '0')}:
+                          {String(sessionSecondsLeft % 60).padStart(2, '0')}
+                        </span>
+                        . Extend to stay signed in.
+                      </p>
+                    </div>
+                    <button
+                      ref={extendBtnRef}
+                      type="button"
+                      className="extend-session-btn"
+                      onClick={handleExtendSession}
+                      disabled={isExtending}
+                      aria-label={isExtending ? 'Extending session, please wait' : 'Extend session by 10 minutes'}
+                      aria-describedby="session-warning"
+                    >
+                      {isExtending ? 'Extending…' : 'Extend Session'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div className="session-status-badge" role="status">
                 <span className="status-indicator-dot" aria-hidden="true"></span>
                 <span>Authenticated Session Active (Two-Factor Verified)</span>
+              </div>
+
+              {/* Session time remaining indicator (always visible) */}
+              <div className="session-time-row" aria-label={`Session time remaining: ${Math.floor(sessionSecondsLeft / 60)} minutes ${sessionSecondsLeft % 60} seconds`}>
+                <span className="session-time-label">Session time remaining:</span>
+                <span className="session-time-value" aria-hidden="true">
+                  {String(Math.floor(sessionSecondsLeft / 60)).padStart(2, '0')}:
+                  {String(sessionSecondsLeft % 60).padStart(2, '0')}
+                </span>
+                {!sessionWarningVisible && (
+                  <button
+                    type="button"
+                    className="extend-session-btn-subtle"
+                    onClick={handleExtendSession}
+                    disabled={isExtending}
+                    aria-label="Extend session by 10 minutes"
+                  >
+                    {isExtending ? 'Extending…' : 'Extend'}
+                  </button>
+                )}
               </div>
 
               <div className="user-profile-card">

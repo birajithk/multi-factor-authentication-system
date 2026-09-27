@@ -646,6 +646,224 @@ button:disabled {
   margin-top: 8px;
 }
 
+/* ------------------------------------------------------------
+ * U6 Session Expiry Warning Banner & Countdown
+ * ------------------------------------------------------------ */
+.session-warning-banner {
+  display: flex;
+  align-items: stretch;
+  padding: 14px 16px;
+  background: #fff8e1;
+  border: 1px solid #f9a825;
+  border-left: 5px solid #f9a825;
+  border-radius: 6px;
+  animation: slide-in-warning 0.3s ease-out;
+}
+
+.session-warning-critical {
+  background: #fff0f0;
+  border-color: #c62828;
+  border-left-color: #c62828;
+  animation: pulse-warning 0.8s infinite ease-in-out;
+}
+
+@keyframes slide-in-warning {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulse-warning {
+  0%, 100% {
+    background: #fff0f0;
+    box-shadow: 0 0 0 0 rgba(198, 40, 40, 0.25);
+  }
+  50% {
+    background: #ffe5e5;
+    box-shadow: 0 0 0 6px rgba(198, 40, 40, 0);
+  }
+}
+
+.session-warning-content {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  flex-wrap: wrap;
+}
+
+.session-warning-icon {
+  font-size: 1.4rem;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.session-warning-text {
+  flex: 1;
+  min-width: 160px;
+}
+
+.session-warning-text strong {
+  display: block;
+  color: #7b4a00;
+  font-size: 0.9rem;
+  font-weight: 800;
+  margin-bottom: 2px;
+}
+
+.session-warning-critical .session-warning-text strong {
+  color: #7f0000;
+}
+
+.session-warning-text p {
+  margin: 0;
+  color: #5d3a00;
+  font-size: 0.84rem;
+  line-height: 1.4;
+}
+
+.session-warning-critical .session-warning-text p {
+  color: #6a0000;
+}
+
+.session-countdown {
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: #c77800;
+  background: #fff3cd;
+  border: 1px solid #f9a825;
+  border-radius: 3px;
+  padding: 1px 5px;
+  display: inline-block;
+}
+
+.session-warning-critical .session-countdown {
+  color: #c62828;
+  background: #fde8e8;
+  border-color: #c62828;
+  animation: blink-countdown 0.6s step-end infinite;
+}
+
+@keyframes blink-countdown {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.3; }
+}
+
+/* Prominent extend button inside the warning banner */
+.extend-session-btn {
+  flex-shrink: 0;
+  min-height: 40px;
+  padding: 8px 16px;
+  color: #fff;
+  background: #e65100;
+  border: 0;
+  border-radius: 4px;
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: background 0.15s ease-in-out;
+  white-space: nowrap;
+}
+
+.extend-session-btn:hover,
+.extend-session-btn:focus-visible {
+  background: #bf360c;
+}
+
+.session-warning-critical .extend-session-btn {
+  background: #c62828;
+  animation: pulse-btn 0.8s infinite ease-in-out;
+}
+
+.session-warning-critical .extend-session-btn:hover,
+.session-warning-critical .extend-session-btn:focus-visible {
+  background: #7f0000;
+}
+
+@keyframes pulse-btn {
+  0%, 100% { transform: scale(1); }
+  50%       { transform: scale(1.04); }
+}
+
+.extend-session-btn:disabled {
+  cursor: wait;
+  opacity: 0.65;
+  animation: none;
+}
+
+/* Session time row (always visible, subtle) */
+.session-time-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 6px 10px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-size: 0.82rem;
+}
+
+.session-time-label {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.session-time-value {
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 0.9rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: var(--ink);
+}
+
+/* Subtle extend button in the time row (shown when not in warning mode) */
+.extend-session-btn-subtle {
+  margin-left: auto;
+  min-height: 32px;
+  padding: 4px 12px;
+  color: var(--accent);
+  background: var(--soft-accent);
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+}
+
+.extend-session-btn-subtle:hover,
+.extend-session-btn-subtle:focus-visible {
+  color: #fff;
+  background: var(--accent);
+}
+
+.extend-session-btn-subtle:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+@media (max-width: 480px) {
+  .session-warning-content {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .extend-session-btn {
+    width: 100%;
+  }
+}
+
 .setup-preview {
   display: grid;
   grid-template-columns: 1fr 1fr;
