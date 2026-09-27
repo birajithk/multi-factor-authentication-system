@@ -217,3 +217,97 @@ export async function verifyTOTPEnrollment(
         });
     }
 }
+
+/**
+ * Verify TOTP code for standard two-factor authentication login.
+ */
+export async function verifyTOTPLogin(req, res) {
+    const client = await pool.connect();
+    try {
+        const userId = req.headers["x-user-id"] || req.body?.userId;
+        const rawToken = req.body?.token;
+        const token = typeof rawToken === "string" ? rawToken.replace(/\s+/g, "").trim() : "";
+
+        if (!userId) {
+            return res.status(401).json({
+                error: "User authentication context required."
+            });
+        }
+
+        if (!/^\d{6}$/.test(token)) {
+            return res.status(400).json({
+                error: "TOTP code must be exactly 6 digits."
+            });
+        }
+
+        const credential = await getTOTPRecord(userId);
+        if (!credential) {
+            return res.status(404).json({
+                error: "No TOTP credential configured for this user."
+            });
+        }
+
+        const secret = decryptSecret(
+            credential.encrypted_secret,
+            credential.nonce,
+            credential.auth_tag
+        );
+
+        const verification = await verifyTOTPCode(secret, token);
+        if (!verification.valid) {
+            return res.status(401).json({
+                error: "Invalid authenticator code."
+            });
+        }
+
+        const currentStep = getCurrentTOTPStep();
+
+        await client.query("BEGIN");
+
+        const lockResult = await client.query(
+            `SELECT last_accepted_step FROM totp_credentials WHERE user_id = $1 FOR UPDATE`,
+            [userId]
+        );
+
+        if (lockResult.rows.length === 0) {
+            await client.query("ROLLBACK");
+            return res.status(404).json({ error: "Credential not found." });
+        }
+
+        const lastAccepted = lockResult.rows[0].last_accepted_step;
+        if (lastAccepted !== null && currentStep <= Number(lastAccepted)) {
+            await client.query("ROLLBACK");
+            return res.status(409).json({
+                error: "This TOTP code has already been used. Please wait for the next code."
+            });
+        }
+
+        await client.query(
+            `UPDATE totp_credentials SET last_accepted_step = $2, updated_at = NOW() WHERE user_id = $1`,
+            [userId, currentStep]
+        );
+
+        const userResult = await client.query(
+            `SELECT user_id, username, account_status, created_at FROM users WHERE user_id = $1`,
+            [userId]
+        );
+
+        await client.query("COMMIT");
+
+        return res.status(200).json({
+            success: true,
+            result: "MFA_AUTHENTICATED",
+            message: "Two-factor authentication successful.",
+            user: userResult.rows[0]
+        });
+
+    } catch (error) {
+        await client.query("ROLLBACK").catch(() => {});
+        console.error("TOTP login verification error:", error);
+        return res.status(500).json({
+            error: "Unable to verify login authenticator code."
+        });
+    } finally {
+        client.release();
+    }
+}

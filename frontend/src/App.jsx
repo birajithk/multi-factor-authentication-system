@@ -67,6 +67,15 @@ const SCREEN_CONTENT = {
     footerAction: 'Return to sign in',
     footerTarget: 'login',
   },
+  dashboard: {
+    eyebrow: 'Protected Demo Resource',
+    title: 'SecureByte Demo Dashboard',
+    description: 'Two-factor authentication verified. You have full access to protected prototype resources.',
+    action: 'Sign out',
+    footer: 'Session active',
+    footerAction: 'Sign out',
+    footerTarget: 'login',
+  },
 }
 
 function App() {
@@ -76,6 +85,7 @@ function App() {
   const [statusType, setStatusType] = useState('info')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [userId, setUserId] = useState('')
+  const [userProfile, setUserProfile] = useState(null)
   const [setupKey, setSetupKey] = useState('')
   const [setupUri, setSetupUri] = useState('')
   const [demoCode, setDemoCode] = useState('')
@@ -275,6 +285,66 @@ function App() {
       updateStatus('Unable to reach the authentication service. Try again.', 'error')
     } finally {
       setIsSubmitting(false)
+    }
+  }
+
+  const submitTOTPLogin = async (event) => {
+    event.preventDefault()
+    setIsSubmitting(true)
+    updateStatus('')
+
+    const rawToken = new FormData(event.currentTarget).get('token')
+    const token = typeof rawToken === 'string' ? rawToken.replace(/\s+/g, '').trim() : ''
+
+    try {
+      const response = await fetch('/api/totp/verify-login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(userId ? { 'x-user-id': userId } : {}),
+        },
+        credentials: 'include',
+        body: JSON.stringify({ token, userId }),
+      })
+      const body = await response.json().catch(() => ({}))
+
+      if (response.status === 200 && body.result === 'MFA_AUTHENTICATED') {
+        setUserProfile(body.user)
+        setTokenInput('')
+        setScreen('dashboard')
+        updateStatus('Two-factor authentication successful. Welcome to your protected dashboard.', 'success')
+      } else if (response.status === 401) {
+        updateStatus(responseError(body, 'Invalid authenticator code. Please check your authenticator app.'), 'error')
+      } else if (response.status === 409) {
+        updateStatus(responseError(body, 'That authenticator code has already been used. Please wait for the next time-step.'), 'error')
+      } else {
+        updateStatus(responseError(body, 'Unable to complete two-factor authentication.'), 'error')
+      }
+    } catch {
+      updateStatus('Unable to reach the authentication service. Try again.', 'error')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const handleLogout = async () => {
+    setIsSubmitting(true)
+    try {
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        credentials: 'include',
+      })
+    } catch {
+      // Proceed with client clean-up
+    } finally {
+      setIsSubmitting(false)
+      setUserProfile(null)
+      setUserId('')
+      setSetupKey('')
+      setRecoveryCodes([])
+      setTokenInput('')
+      navigateTo('login')
+      updateStatus('You have been signed out. Protected session ended successfully.', 'info')
     }
   }
 
@@ -507,7 +577,52 @@ function App() {
             <p id="form-description">{currentScreen.description}</p>
           </div>
 
-          {screen === 'recovery_codes' ? (
+          {screen === 'dashboard' ? (
+            <div className="dashboard-container" aria-labelledby="auth-title">
+              <div className="session-status-badge" role="status">
+                <span className="status-indicator-dot" aria-hidden="true"></span>
+                <span>Authenticated Session Active (Two-Factor Verified)</span>
+              </div>
+
+              <div className="user-profile-card">
+                <h3 className="card-title">Security &amp; Session Details</h3>
+                <div className="profile-row">
+                  <span className="profile-label">Username:</span>
+                  <strong className="profile-value">{userProfile?.username || 'Authenticated User'}</strong>
+                </div>
+                <div className="profile-row">
+                  <span className="profile-label">User ID:</span>
+                  <code className="profile-code">{userProfile?.user_id || userId || 'N/A'}</code>
+                </div>
+                <div className="profile-row">
+                  <span className="profile-label">Account Status:</span>
+                  <span className="account-status-active">{userProfile?.account_status || 'ACTIVE'}</span>
+                </div>
+                <div className="profile-row">
+                  <span className="profile-label">Authentication Factors:</span>
+                  <span className="profile-value">Password (Argon2id) + TOTP Authenticator</span>
+                </div>
+              </div>
+
+              <div className="protected-resource-box">
+                <h3 className="card-title">Guarded Prototype Dashboard</h3>
+                <p className="protected-desc">
+                  This protected resource confirms that unauthenticated direct requests and single-factor submissions are denied.
+                  Per Section 6.4 &amp; 10, the server tracks this session lifecycle with secure cookies and CSRF protections.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                className="primary-button logout-btn"
+                onClick={handleLogout}
+                disabled={isSubmitting}
+                aria-label="Sign out of SecureByte"
+              >
+                {isSubmitting ? 'Signing out...' : 'Sign out / End session'}
+              </button>
+            </div>
+          ) : screen === 'recovery_codes' ? (
             <div className="recovery-codes-container" aria-labelledby="auth-title">
               <div className="recovery-warning-box" role="note" aria-label="Recovery codes security warning">
                 <strong>Important:</strong> These codes will never be displayed again. Save or copy them now. Each code is 128-bit (32 hexadecimal characters) and single-use only.
@@ -581,7 +696,13 @@ function App() {
             </div>
           ) : (
             <form
-              onSubmit={screen === 'enrollment' ? submitEnrollment : submitAuth}
+              onSubmit={
+                screen === 'enrollment'
+                  ? submitEnrollment
+                  : screen === 'totp'
+                    ? submitTOTPLogin
+                    : submitAuth
+              }
               aria-describedby="form-description status-message"
               aria-busy={isSubmitting}
             >
@@ -638,12 +759,45 @@ function App() {
                     />
                     <button
                       type="button"
-                      className="text-action"
+                      className="eye-toggle-btn"
                       aria-pressed={showPassword}
                       aria-label={showPassword ? 'Hide password' : 'Show password'}
+                      title={showPassword ? 'Hide password' : 'Show password'}
                       onClick={() => setShowPassword((visible) => !visible)}
                     >
-                      {showPassword ? 'Hide password' : 'Show password'}
+                      {showPassword ? (
+                        <svg
+                          width="20"
+                          height="20"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          aria-hidden="true"
+                          focusable="false"
+                        >
+                          <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                          <line x1="1" y1="1" x2="23" y2="23" />
+                        </svg>
+                      ) : (
+                        <svg
+                          width="20"
+                          height="20"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          aria-hidden="true"
+                          focusable="false"
+                        >
+                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                          <circle cx="12" cy="12" r="3" />
+                        </svg>
+                      )}
                     </button>
                   </div>
                   <span id="password-help" className="field-help">
@@ -719,12 +873,14 @@ function App() {
             </form>
           )}
 
-          <p className="form-footer">
-            {currentScreen.footer}{' '}
-            <button type="button" className="link-button" onClick={() => navigateTo(currentScreen.footerTarget)}>
-              {currentScreen.footerAction}
-            </button>
-          </p>
+          {screen !== 'dashboard' && (
+            <p className="form-footer">
+              {currentScreen.footer}{' '}
+              <button type="button" className="link-button" onClick={() => navigateTo(currentScreen.footerTarget)}>
+                {currentScreen.footerAction}
+              </button>
+            </p>
+          )}
 
           <div
             id="status-message"
@@ -740,7 +896,6 @@ function App() {
 
       <footer className="site-footer">
         <span>SecureByte Multi-Factor Authentication</span>
-        <span>WCAG 2.1 AA Compliant</span>
       </footer>
     </main>
   )

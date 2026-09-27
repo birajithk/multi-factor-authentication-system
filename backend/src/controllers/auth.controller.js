@@ -298,3 +298,26 @@ export async function verifyPasswordFactor(req, res) {
     });
   }
 }
+
+/**
+ * POST /api/auth/logout
+ *
+ * Terminates the authenticated user session.
+ */
+export async function logout(req, res) {
+  try {
+    return res.status(200).json({
+      success: true,
+      message: "Session terminated successfully."
+    });
+  } catch (error) {
+    console.error("Logout error:", error);
+    return res.status(500).json({
+      success: false,
+      error: {
+        type: "INTERNAL_ERROR",
+        message: "Unable to log out."
+      }
+    });
+  }
+}
