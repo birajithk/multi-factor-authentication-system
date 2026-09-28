@@ -82,6 +82,8 @@ const SCREEN_CONTENT = {
 const SESSION_DURATION_SECONDS = 10 * 60
 // Warning fires when this many seconds remain
 const SESSION_WARN_AT_SECONDS = 60
+// U6 — maximum session extensions allowed per session (Section 6.5)
+const MAX_SESSION_EXTENSIONS = 10
 
 function App() {
   const [screen, setScreen] = useState('login')
@@ -102,6 +104,7 @@ function App() {
   const [sessionSecondsLeft, setSessionSecondsLeft] = useState(SESSION_DURATION_SECONDS)
   const [sessionWarningVisible, setSessionWarningVisible] = useState(false)
   const [isExtending, setIsExtending] = useState(false)
+  const [sessionExtensionCount, setSessionExtensionCount] = useState(0)
   const sessionTimerRef = useRef(null)
   const extendBtnRef = useRef(null)
   const headingRef = useRef(null)
@@ -339,11 +342,69 @@ function App() {
     }
   }
 
+  // U5 — recovery form: sends password + unused recovery code to backend
+  const submitRecovery = async (event) => {
+    event.preventDefault()
+    setIsSubmitting(true)
+    updateStatus('')
+
+    const formData = new FormData(event.currentTarget)
+    const payload = {
+      username: formData.get('username'),
+      password: formData.get('password'),
+      recoveryCode: formData.get('recovery-code'),
+    }
+
+    try {
+      const response = await fetch('/api/auth/recovery', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(payload),
+      })
+      const body = await response.json().catch(() => ({}))
+
+      if (response.status === 200 && body.result === 'RECOVERY_SUCCESSFUL') {
+        // Recovery succeeded — redirect to enrollment to set up a new authenticator
+        if (body.user_id) setUserId(body.user_id)
+        const nextStep = body.next_step
+        if (nextStep === 'AUTHENTICATOR_ENROLLMENT') {
+          setScreen('enrollment')
+          await startEnrollment(body.user_id)
+        } else {
+          navigateTo('login')
+          updateStatus('Recovery successful. Please sign in again with your new authenticator.', 'success')
+        }
+      } else if (response.status === 401) {
+        updateStatus(responseError(body, 'Invalid password or recovery code.'), 'error')
+      } else if (response.status === 410 && body.error?.type === 'RECOVERY_CODE_USED') {
+        updateStatus('That recovery code has already been used. Try a different one.', 'error')
+      } else if (response.status === 429 && body.error?.type === 'TEMPORARILY_RESTRICTED') {
+        const retryAfter = body.error.retry_after_seconds
+        updateStatus(
+          retryAfter
+            ? `Too many recovery attempts. Try again in ${retryAfter} seconds.`
+            : 'Too many recovery attempts. Try again later.',
+          'error',
+        )
+      } else if (response.status === 400 && body.error?.type === 'VALIDATION_ERROR') {
+        updateStatus(responseError(body, 'Check your inputs and try again.'), 'error')
+      } else {
+        updateStatus(responseError(body, 'Unable to complete recovery. Try again.'), 'error')
+      }
+    } catch {
+      updateStatus('Unable to reach the authentication service. Try again.', 'error')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
   // U6 — start the session countdown timer (called after MFA success)
   const startSessionTimer = () => {
     if (sessionTimerRef.current) clearInterval(sessionTimerRef.current)
     setSessionSecondsLeft(SESSION_DURATION_SECONDS)
     setSessionWarningVisible(false)
+    setSessionExtensionCount(0)
 
     // Track which narrator milestones we've already announced
     const announced = new Set()
@@ -441,8 +502,20 @@ function App() {
     setStatusType('error')
   }
 
-  // U6 — extend session: POST to backend, reset timer on success
+  // U6 — extend session: POST to backend, reset timer on success (max 10 extensions)
   const handleExtendSession = async () => {
+    // Enforce the 10-extension limit per session (Section 6.5)
+    if (sessionExtensionCount >= MAX_SESSION_EXTENSIONS) {
+      updateStatus(
+        `Session extension limit reached (${MAX_SESSION_EXTENSIONS} of ${MAX_SESSION_EXTENSIONS}). You cannot extend further. Please save your work.`,
+        'error',
+      )
+      speak(
+        `You have reached the maximum of ${MAX_SESSION_EXTENSIONS} session extensions. The session will expire when the timer reaches zero.`,
+      )
+      return
+    }
+
     setIsExtending(true)
     try {
       const response = await fetch('/api/session/extend', {
@@ -452,16 +525,26 @@ function App() {
       if (response.ok || response.status === 501) {
         // Reset the countdown
         stopSessionTimer()
+        setSessionExtensionCount((prev) => prev + 1)
         startSessionTimer()
-        updateStatus('Session extended by 10 minutes.', 'success')
+        const remaining = MAX_SESSION_EXTENSIONS - sessionExtensionCount - 1
+        updateStatus(
+          `Session extended by 10 minutes. ${remaining} extension${remaining === 1 ? '' : 's'} remaining.`,
+          'success',
+        )
       } else {
         updateStatus('Session could not be extended. Please sign in again.', 'error')
       }
     } catch {
       // Backend endpoint not yet active — extend client-side only
       stopSessionTimer()
+      setSessionExtensionCount((prev) => prev + 1)
       startSessionTimer()
-      updateStatus('Session extended by 10 minutes.', 'success')
+      const remaining = MAX_SESSION_EXTENSIONS - sessionExtensionCount - 1
+      updateStatus(
+        `Session extended by 10 minutes. ${remaining} extension${remaining === 1 ? '' : 's'} remaining.`,
+        'success',
+      )
     } finally {
       setIsExtending(false)
     }
@@ -765,11 +848,21 @@ function App() {
                       type="button"
                       className="extend-session-btn"
                       onClick={handleExtendSession}
-                      disabled={isExtending}
-                      aria-label={isExtending ? 'Extending session, please wait' : 'Extend session by 10 minutes'}
+                      disabled={isExtending || sessionExtensionCount >= MAX_SESSION_EXTENSIONS}
+                      aria-label={
+                        sessionExtensionCount >= MAX_SESSION_EXTENSIONS
+                          ? 'Extension limit reached. No more extensions available.'
+                          : isExtending
+                            ? 'Extending session, please wait'
+                            : `Extend session by 10 minutes. ${MAX_SESSION_EXTENSIONS - sessionExtensionCount} extensions remaining.`
+                      }
                       aria-describedby="session-warning"
                     >
-                      {isExtending ? 'Extending…' : 'Extend Session'}
+                      {sessionExtensionCount >= MAX_SESSION_EXTENSIONS
+                        ? 'Limit reached'
+                        : isExtending
+                          ? 'Extending…'
+                          : `Extend (${sessionExtensionCount}/${MAX_SESSION_EXTENSIONS})`}
                     </button>
                   </div>
                 </div>
@@ -792,10 +885,18 @@ function App() {
                     type="button"
                     className="extend-session-btn-subtle"
                     onClick={handleExtendSession}
-                    disabled={isExtending}
-                    aria-label="Extend session by 10 minutes"
+                    disabled={isExtending || sessionExtensionCount >= MAX_SESSION_EXTENSIONS}
+                    aria-label={
+                      sessionExtensionCount >= MAX_SESSION_EXTENSIONS
+                        ? 'Extension limit reached'
+                        : `Extend session by 10 minutes. ${MAX_SESSION_EXTENSIONS - sessionExtensionCount} extensions remaining.`
+                    }
                   >
-                    {isExtending ? 'Extending…' : 'Extend'}
+                    {sessionExtensionCount >= MAX_SESSION_EXTENSIONS
+                      ? `Limit (${MAX_SESSION_EXTENSIONS}/${MAX_SESSION_EXTENSIONS})`
+                      : isExtending
+                        ? 'Extending…'
+                        : `Extend (${sessionExtensionCount}/${MAX_SESSION_EXTENSIONS})`}
                   </button>
                 )}
               </div>
@@ -917,7 +1018,9 @@ function App() {
                   ? submitEnrollment
                   : screen === 'totp'
                     ? submitTOTPLogin
-                    : submitAuth
+                    : screen === 'recovery'
+                      ? submitRecovery
+                      : submitAuth
               }
               aria-describedby="form-description status-message"
               aria-busy={isSubmitting}
