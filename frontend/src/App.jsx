@@ -925,7 +925,7 @@ function App() {
                 <h3 className="card-title">Guarded Prototype Dashboard</h3>
                 <p className="protected-desc">
                   This protected resource confirms that unauthenticated direct requests and single-factor submissions are denied.
-                  Per Section 6.4 &amp; 10, the server tracks this session lifecycle with secure cookies and CSRF protections.
+                 The server tracks this session lifecycle with secure cookies and CSRF protections.
                 </p>
               </div>
 
@@ -1008,7 +1008,7 @@ function App() {
               </button>
 
               <p className="staged-login-note" aria-live="polite">
-                Notice: Per security design rules (Sections 6.2 &amp; 8.2), authenticator confirmation completes setup and returns to normal login. Direct dashboard access is not granted until you perform a standard two-factor sign in.
+                Notice: Per security design rules , authenticator confirmation completes setup and returns to normal login. Direct dashboard access is not granted until you perform a standard two-factor sign in.
               </p>
             </div>
           ) : (

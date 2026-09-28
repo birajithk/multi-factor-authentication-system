@@ -1,15 +1,15 @@
 :root {
-  --surface: #f7f4ed;
-  --panel: #fffdf8;
+  --surface: #ffffff;
+  --panel: #ffffff;
   --ink: #172a3a;
   --muted: #5d686e;
-  --line: #d9d5ca;
+  --line: #cad6d941;
   --line-strong: #9ba19b;
-  --accent: #c34b2c;
-  --accent-dark: #8b301f;
-  --soft-accent: #f3dfd2;
+  --accent: #2c59c3;
+  --accent-dark: #1f2c8b;
+  --soft-accent: #0c8fc7;
   --focus: #117a8b;
-  --shadow: #e4d5c4;
+  --shadow: #bcb8b3;
   --sans: 'Trebuchet MS', 'Segoe UI', sans-serif;
   --heading: Georgia, 'Times New Roman', serif;
 
