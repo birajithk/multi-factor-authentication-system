@@ -13,8 +13,9 @@ const TOTP_CONFIG = {
     base32,
     algorithm: "sha1",
     digits: 6,
-    step: 30,
-    window: 1
+    period: 30,
+    t0: 0,
+    epochTolerance: 30
 };
 
 /**
