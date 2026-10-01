@@ -1,0 +1,15 @@
+**
+!package.json
+!package-lock.json
+!index.html
+!vite.config.js
+!nginx.conf
+!src/
+!src/**
+**/.env
+**/.env.*
+**/.npmrc
+**/*.pem
+**/*.key
+**/node_modules
+**/*.log
