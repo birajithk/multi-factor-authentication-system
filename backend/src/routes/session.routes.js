@@ -9,6 +9,7 @@ import {
   getDashboard,
   getCurrentSession,
   logout,
+  extendCurrentSession,
 } from "../controllers/session.controller.js";
 
 /*
@@ -27,6 +28,13 @@ router.post(
   requireJsonRequest,
   requireFullSession,
   logout,
+);
+
+router.post(
+  "/session/extend",
+  requireJsonRequest,
+  requireFullSession,
+  extendCurrentSession,
 );
 
 export default router;

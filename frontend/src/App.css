@@ -280,3 +280,18 @@ button {
     display: none;
   }
 }
+
+.session-warning {
+  display: grid;
+  gap: 14px;
+  margin-top: 24px;
+  padding: 18px;
+  border: 2px solid var(--accent);
+  border-radius: 3px;
+}
+
+.session-warning p {
+  margin: 0;
+  color: var(--ink);
+  font-weight: 700;
+}
