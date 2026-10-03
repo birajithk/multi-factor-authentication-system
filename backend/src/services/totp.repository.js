@@ -1,5 +1,6 @@
 import pool from "../config/database.js";
 
+
 /**
  * Store an encrypted TOTP credential for a user.
  */
@@ -227,6 +228,145 @@ export async function completeTOTPEnrollment(
             user: userResult.rows[0]
         };
 
+    } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+    } finally {
+        client.release();
+    }
+}
+
+
+/**
+ * Atomically complete TOTP authenticator replacement
+ * during account recovery.
+ *
+ * This transaction:
+ *
+ * 1. Locks the new TOTP credential.
+ * 2. Prevents replay of the accepted TOTP time-step.
+ * 3. Stores last_accepted_step.
+ * 4. Changes RECOVERY_REQUIRED -> ACTIVE.
+ * 5. Deletes the recovery-only session.
+ *
+ * No full application session is created here.
+ * After recovery, the user must perform normal
+ * password + TOTP login.
+ */
+export async function completeTOTPRecoveryEnrollment(
+    userId,
+    timeStep
+) {
+    const client = await pool.connect();
+
+    try {
+        await client.query("BEGIN");
+
+        const credentialResult =
+            await client.query(
+                `
+                SELECT
+                    user_id,
+                    last_accepted_step
+                FROM totp_credentials
+                WHERE user_id = $1
+                FOR UPDATE
+                `,
+                [userId]
+            );
+
+        if (
+            credentialResult.rows.length === 0
+        ) {
+            throw new Error(
+                "TOTP credential not found."
+            );
+        }
+
+        const credential =
+            credentialResult.rows[0];
+
+        /*
+         * Replay prevention.
+         */
+        if (
+            credential.last_accepted_step !==
+                null &&
+            timeStep <=
+                Number(
+                    credential.last_accepted_step
+                )
+        ) {
+            await client.query("ROLLBACK");
+
+            return {
+                success: false,
+                reason: "TOTP_REPLAY"
+            };
+        }
+
+        /*
+         * Record the accepted recovery-enrollment
+         * TOTP step.
+         */
+        await client.query(
+            `
+            UPDATE totp_credentials
+            SET
+                last_accepted_step = $2,
+                updated_at = NOW()
+            WHERE user_id = $1
+            `,
+            [userId, timeStep]
+        );
+
+        /*
+         * Recovery may activate ONLY an account
+         * currently restricted to RECOVERY_REQUIRED.
+         */
+        const userResult =
+            await client.query(
+                `
+                UPDATE users
+                SET account_status = 'ACTIVE'
+                WHERE user_id = $1
+                  AND account_status =
+                      'RECOVERY_REQUIRED'
+                RETURNING
+                    user_id,
+                    username,
+                    account_status
+                `,
+                [userId]
+            );
+
+        if (
+            userResult.rows.length === 0
+        ) {
+            throw new Error(
+                "User is not in RECOVERY_REQUIRED state."
+            );
+        }
+
+        /*
+         * Recovery authorization is single-purpose.
+         * Once the new authenticator is verified,
+         * remove the recovery-only session.
+         */
+        await client.query(
+            `
+            DELETE FROM recovery_sessions
+            WHERE user_id = $1
+            `,
+            [userId]
+        );
+
+        await client.query("COMMIT");
+
+        return {
+            success: true,
+            user: userResult.rows[0]
+        };
     } catch (error) {
         await client.query("ROLLBACK");
         throw error;

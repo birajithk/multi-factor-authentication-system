@@ -9,6 +9,10 @@ import {
   createSessionSecurityEvent,
 } from "../services/session-event-metadata.service.js";
 
+import {
+  SecurityLogger,
+} from "../services/security-logger.service.js";
+
 /*
  * Every handler in this file runs AFTER requireFullSession.
  *
@@ -60,24 +64,44 @@ export async function logout(req, res) {
   const correlationId = randomUUID();
 
   try {
-    await revokeSession(req.authSession.sessionId);
+    // Revoke the current server-side session first.
+    await revokeSession(
+      req.authSession.sessionId,
+    );
 
-    const securityEvent = createSessionSecurityEvent({
-      eventType: "LOGOUT",
-      outcome: "SUCCESS",
-      correlationId,
-      userId: req.authSession.userId,
+    /*
+     * Create credential-free security metadata.
+     *
+     * IMPORTANT:
+     * Do not include raw session tokens, cookie values,
+     * passwords, or TOTP codes in this event.
+     */
+    const securityEvent =
+      createSessionSecurityEvent({
+        eventType: "LOGOUT",
+        outcome: "SUCCESS",
+        correlationId,
+        userId: req.authSession.userId,
+      });
+
+    /*
+     * Persist the logout event through the team's common
+     * security logger.
+     */
+    await SecurityLogger.logEvent({
+      event_type: securityEvent.eventType,
+      outcome: securityEvent.outcome,
+      correlation_id:
+        securityEvent.correlationId,
+      user_id: securityEvent.userId,
     });
 
     /*
-     * Integration point for Sathurshna's common logger:
+     * Clear the browser's full-session cookie.
      *
-     * await recordSecurityEvent(securityEvent);
-     *
-     * Do not send securityEvent to the browser.
+     * The session is already revoked server-side, so even a
+     * copied old cookie value cannot be used again.
      */
-    void securityEvent;
-
     clearSessionCookie(res);
 
     return res.status(200).json({
@@ -87,14 +111,15 @@ export async function logout(req, res) {
   } catch (error) {
     console.error(
       "Logout failed:",
-      error.message
+      error.message,
     );
 
     return res.status(500).json({
       success: false,
       error: {
         type: "INTERNAL_ERROR",
-        message: "Logout could not be completed.",
+        message:
+          "Logout could not be completed.",
       },
     });
   }

@@ -294,9 +294,8 @@ export async function verifyPasswordFactor(req, res) {
         break;
 
       case "RECOVERY_REQUIRED":
-        // Recovery belongs to Sathurshna's recovery module.
-        // No pending scope is created here.
         nextStep = "RECOVERY_CODE_VERIFICATION";
+        pendingScope = PENDING_SCOPES.MFA_PENDING;
         break;
 
       default:
