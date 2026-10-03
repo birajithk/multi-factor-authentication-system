@@ -102,6 +102,23 @@ export function setSessionCookie(res, token) {
   });
 }
 
+/**
+ * Refresh the browser lifetime of the existing full-session
+ * cookie without changing its token value.
+ */
+export function refreshSessionCookie(
+  res,
+  token,
+) {
+  res.cookie(SESSION_COOKIE_NAME, token, {
+    ...baseCookieOptions(),
+    maxAge:
+      SESSION_LIFETIME_MINUTES *
+      60 *
+      1000,
+  });
+}
+
 export function clearSessionCookie(res) {
   res.clearCookie(
     SESSION_COOKIE_NAME,
@@ -307,4 +324,43 @@ export async function revokeSession(sessionId) {
     `,
     [sessionId],
   );
+}
+
+/**
+ * Extend an active full session.
+ *
+ * The session must still be:
+ * - unrevoked,
+ * - unexpired,
+ * - owned by an ACTIVE account.
+ *
+ * Extends expiry to 30 minutes from NOW().
+ */
+export async function extendSession(
+  sessionId,
+) {
+  const result = await pool.query(
+    `
+      UPDATE sessions s
+      SET expires_at =
+        NOW() + ($2 * INTERVAL '1 minute')
+      FROM users u
+      WHERE s.session_id = $1
+        AND s.user_id = u.user_id
+        AND s.revoked_at IS NULL
+        AND s.expires_at > NOW()
+        AND u.account_status = 'ACTIVE'
+      RETURNING
+        s.session_id,
+        s.user_id,
+        s.created_at,
+        s.expires_at
+    `,
+    [
+      sessionId,
+      SESSION_LIFETIME_MINUTES,
+    ],
+  );
+
+  return result.rows[0] ?? null;
 }

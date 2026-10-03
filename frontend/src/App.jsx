@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import './App.css'
 
 function App() {
@@ -6,8 +6,13 @@ function App() {
   const [showPassword, setShowPassword] = useState(false)
   const [status, setStatus] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+
   const [setupKey, setSetupKey] = useState('')
   const [dashboard, setDashboard] = useState(null)
+
+  const [sessionExpiresAt, setSessionExpiresAt] = useState(null)
+  const [showSessionWarning, setShowSessionWarning] = useState(false)
+  const [isExtendingSession, setIsExtendingSession] = useState(false)
 
   const navigateTo = (nextScreen) => {
     setScreen(nextScreen)
@@ -31,7 +36,122 @@ function App() {
 
     const body = await response.json().catch(() => ({}))
 
-    return { response, body }
+    return {
+      response,
+      body,
+    }
+  }
+
+  // -------------------------------------------------------
+  // Session information
+  // -------------------------------------------------------
+
+  const loadSessionInfo = async () => {
+    try {
+      const { response, body } = await apiRequest(
+        '/api/session',
+        {
+          method: 'GET',
+        },
+      )
+
+      if (
+        response.status === 200 &&
+        body.success &&
+        body.session?.expires_at
+      ) {
+        setSessionExpiresAt(body.session.expires_at)
+        setShowSessionWarning(false)
+
+        return true
+      }
+
+      setSessionExpiresAt(null)
+      setShowSessionWarning(false)
+      setDashboard(null)
+      setScreen('login')
+
+      setStatus(
+        body.error?.message ||
+          'Your session has expired. Sign in again.',
+      )
+
+      return false
+    } catch {
+      /*
+       * Fail closed if the frontend cannot verify the
+       * current authenticated session.
+       */
+      setSessionExpiresAt(null)
+      setShowSessionWarning(false)
+      setDashboard(null)
+      setScreen('login')
+
+      setStatus(
+        'Unable to verify your session. Sign in again.',
+      )
+
+      return false
+    }
+  }
+
+  // -------------------------------------------------------
+  // Extend current full session
+  // -------------------------------------------------------
+
+  const extendCurrentSession = async () => {
+    setIsExtendingSession(true)
+    setStatus('')
+
+    try {
+      const { response, body } = await apiRequest(
+        '/api/session/extend',
+        {
+          method: 'POST',
+          body: JSON.stringify({}),
+        },
+      )
+
+      if (
+        response.status === 200 &&
+        body.result === 'SESSION_EXTENDED' &&
+        body.session?.expires_at
+      ) {
+        setSessionExpiresAt(body.session.expires_at)
+        setShowSessionWarning(false)
+
+        setStatus(
+          'Your session has been extended.',
+        )
+
+        return
+      }
+
+      if (response.status === 401) {
+        setDashboard(null)
+        setSessionExpiresAt(null)
+        setShowSessionWarning(false)
+        setScreen('login')
+
+        setStatus(
+          body.error?.message ||
+            'Your session expired. Sign in again.',
+        )
+
+        return
+      }
+
+      setStatus(
+        body.error?.message ||
+          'Your session could not be extended.',
+      )
+    } catch {
+      setStatus(
+        'Unable to extend your session.',
+      )
+    } finally {
+      setIsExtendingSession(false)
+    }
   }
 
   // -------------------------------------------------------
@@ -55,17 +175,23 @@ function App() {
         : '/api/auth/password'
 
     try {
-      const { response, body } = await apiRequest(endpoint, {
-        method: 'POST',
-        body: JSON.stringify({
-          username,
-          password,
-        }),
-      })
+      const { response, body } = await apiRequest(
+        endpoint,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            username,
+            password,
+          }),
+        },
+      )
 
       // Registration
       if (screen === 'register') {
-        if (response.status === 201 && body.success) {
+        if (
+          response.status === 201 &&
+          body.success
+        ) {
           setStatus(
             'Account created. Starting authenticator setup.',
           )
@@ -88,7 +214,8 @@ function App() {
         body.result === 'PASSWORD_VERIFIED'
       ) {
         if (
-          body.next_step === 'AUTHENTICATOR_ENROLLMENT'
+          body.next_step ===
+          'AUTHENTICATOR_ENROLLMENT'
         ) {
           setStatus(
             'Password verified. Continue authenticator setup.',
@@ -98,7 +225,10 @@ function App() {
           return
         }
 
-        if (body.next_step === 'TOTP_VERIFICATION') {
+        if (
+          body.next_step ===
+          'TOTP_VERIFICATION'
+        ) {
           setScreen('totp-login')
 
           setStatus(
@@ -109,12 +239,13 @@ function App() {
         }
 
         if (
-          body.next_step === 'RECOVERY_CODE_VERIFICATION'
+          body.next_step ===
+          'RECOVERY_CODE_VERIFICATION'
         ) {
           setScreen('recovery')
 
           setStatus(
-            'Authenticator recovery is required.',
+            'Enter one unused recovery code to continue.',
           )
 
           return
@@ -124,7 +255,8 @@ function App() {
       // Rate limit
       if (
         response.status === 429 &&
-        body.error?.type === 'TEMPORARILY_RESTRICTED'
+        body.error?.type ===
+          'TEMPORARILY_RESTRICTED'
       ) {
         const retry =
           body.error?.retry_after_seconds
@@ -152,7 +284,7 @@ function App() {
   }
 
   // -------------------------------------------------------
-  // Start TOTP enrollment
+  // Start normal authenticator enrollment
   // -------------------------------------------------------
 
   const startEnrollment = async () => {
@@ -181,7 +313,8 @@ function App() {
 
       if (
         response.status === 401 &&
-        body.error?.type === 'AUTHENTICATION_REQUIRED'
+        body.error?.type ===
+          'AUTHENTICATION_REQUIRED'
       ) {
         setSetupKey('')
         setScreen('login')
@@ -208,7 +341,7 @@ function App() {
   }
 
   // -------------------------------------------------------
-  // Verify TOTP enrollment
+  // Verify normal authenticator enrollment
   // -------------------------------------------------------
 
   const verifyEnrollment = async (event) => {
@@ -225,7 +358,9 @@ function App() {
         '/api/totp/enroll/verify',
         {
           method: 'POST',
-          body: JSON.stringify({ token }),
+          body: JSON.stringify({
+            token,
+          }),
         },
       )
 
@@ -245,7 +380,8 @@ function App() {
 
       if (
         response.status === 401 &&
-        body.error?.type === 'AUTHENTICATION_REQUIRED'
+        body.error?.type ===
+          'AUTHENTICATION_REQUIRED'
       ) {
         setSetupKey('')
         setScreen('login')
@@ -274,7 +410,7 @@ function App() {
   }
 
   // -------------------------------------------------------
-  // Normal login TOTP
+  // Normal TOTP login
   // -------------------------------------------------------
 
   const verifyLoginTOTP = async (event) => {
@@ -291,7 +427,9 @@ function App() {
         '/api/auth/totp',
         {
           method: 'POST',
-          body: JSON.stringify({ token }),
+          body: JSON.stringify({
+            token,
+          }),
         },
       )
 
@@ -305,7 +443,8 @@ function App() {
 
       if (
         response.status === 401 &&
-        body.error?.type === 'AUTHENTICATION_REQUIRED'
+        body.error?.type ===
+          'AUTHENTICATION_REQUIRED'
       ) {
         setScreen('login')
 
@@ -319,7 +458,8 @@ function App() {
 
       if (
         response.status === 401 &&
-        body.error?.type === 'AUTHENTICATION_FAILED'
+        body.error?.type ===
+          'AUTHENTICATION_FAILED'
       ) {
         setStatus(
           body.error?.message ||
@@ -331,7 +471,8 @@ function App() {
 
       if (
         response.status === 429 &&
-        body.error?.type === 'TEMPORARILY_RESTRICTED'
+        body.error?.type ===
+          'TEMPORARILY_RESTRICTED'
       ) {
         const retry =
           body.error?.retry_after_seconds
@@ -357,7 +498,8 @@ function App() {
       setIsSubmitting(false)
     }
   }
-    // -------------------------------------------------------
+
+  // -------------------------------------------------------
   // Recovery code verification
   // -------------------------------------------------------
 
@@ -368,7 +510,8 @@ function App() {
     setStatus('')
 
     const formData = new FormData(event.currentTarget)
-    const recoveryCode = formData.get('recoveryCode')
+    const recoveryCode =
+      formData.get('recoveryCode')
 
     try {
       const { response, body } = await apiRequest(
@@ -395,7 +538,8 @@ function App() {
 
       if (
         response.status === 401 &&
-        body.error?.type === 'AUTHENTICATION_REQUIRED'
+        body.error?.type ===
+          'AUTHENTICATION_REQUIRED'
       ) {
         setScreen('login')
 
@@ -409,7 +553,8 @@ function App() {
 
       if (
         response.status === 401 &&
-        body.error?.type === 'AUTHENTICATION_FAILED'
+        body.error?.type ===
+          'AUTHENTICATION_FAILED'
       ) {
         setStatus(
           body.error?.message ||
@@ -421,7 +566,8 @@ function App() {
 
       if (
         response.status === 429 &&
-        body.error?.type === 'TEMPORARILY_RESTRICTED'
+        body.error?.type ===
+          'TEMPORARILY_RESTRICTED'
       ) {
         const retry =
           body.error?.retry_after_seconds
@@ -467,7 +613,10 @@ function App() {
         typeof body.setupKey === 'string'
       ) {
         setSetupKey(body.setupKey)
-        setScreen('recovery-totp-enroll')
+
+        setScreen(
+          'recovery-totp-enroll',
+        )
 
         setStatus(
           'Add this new setup key to your authenticator, then enter the generated six-digit code.',
@@ -478,7 +627,8 @@ function App() {
 
       if (
         response.status === 401 &&
-        body.error?.type === 'AUTHENTICATION_REQUIRED'
+        body.error?.type ===
+          'AUTHENTICATION_REQUIRED'
       ) {
         setSetupKey('')
         setScreen('login')
@@ -506,13 +656,17 @@ function App() {
   // Verify replacement authenticator
   // -------------------------------------------------------
 
-  const verifyRecoveryEnrollment = async (event) => {
+  const verifyRecoveryEnrollment = async (
+    event,
+  ) => {
     event.preventDefault()
 
     setIsSubmitting(true)
     setStatus('')
 
-    const formData = new FormData(event.currentTarget)
+    const formData =
+      new FormData(event.currentTarget)
+
     const token = formData.get('token')
 
     try {
@@ -528,7 +682,8 @@ function App() {
 
       if (
         response.status === 200 &&
-        body.result === 'AUTHENTICATOR_REPLACED'
+        body.result ===
+          'AUTHENTICATOR_REPLACED'
       ) {
         setSetupKey('')
         setScreen('login')
@@ -542,7 +697,8 @@ function App() {
 
       if (
         response.status === 401 &&
-        body.error?.type === 'AUTHENTICATION_REQUIRED'
+        body.error?.type ===
+          'AUTHENTICATION_REQUIRED'
       ) {
         setSetupKey('')
         setScreen('login')
@@ -557,7 +713,8 @@ function App() {
 
       if (
         response.status === 401 &&
-        body.error?.type === 'AUTHENTICATION_FAILED'
+        body.error?.type ===
+          'AUTHENTICATION_FAILED'
       ) {
         setStatus(
           body.error?.message ||
@@ -593,14 +750,24 @@ function App() {
         },
       )
 
-      if (response.status === 200 && body.success) {
+      if (
+        response.status === 200 &&
+        body.success
+      ) {
         setDashboard(body.dashboard)
         setScreen('dashboard')
-        setStatus('Authentication successful.')
+        setStatus(
+          'Authentication successful.',
+        )
+
+        await loadSessionInfo()
+
         return
       }
 
       setDashboard(null)
+      setSessionExpiresAt(null)
+      setShowSessionWarning(false)
       setScreen('login')
 
       setStatus(
@@ -609,6 +776,9 @@ function App() {
       )
     } catch {
       setDashboard(null)
+      setSessionExpiresAt(null)
+      setShowSessionWarning(false)
+      setScreen('login')
 
       setStatus(
         'Unable to load the dashboard.',
@@ -632,7 +802,10 @@ function App() {
         },
       )
 
-      if (!response.ok) {
+      if (
+        !response.ok &&
+        response.status !== 401
+      ) {
         setStatus(
           body.error?.message ||
             'Logout could not be completed.',
@@ -643,8 +816,15 @@ function App() {
 
       setDashboard(null)
       setSetupKey('')
+      setSessionExpiresAt(null)
+      setShowSessionWarning(false)
       setScreen('login')
-      setStatus('You have signed out.')
+
+      setStatus(
+        response.status === 401
+          ? 'Your session has already expired. Sign in again.'
+          : 'You have signed out.',
+      )
     } catch {
       setStatus(
         'Unable to reach the authentication service.',
@@ -664,7 +844,9 @@ function App() {
     }
 
     try {
-      await navigator.clipboard.writeText(setupKey)
+      await navigator.clipboard.writeText(
+        setupKey,
+      )
 
       setStatus(
         'Setup key copied. You can paste it into your authenticator.',
@@ -676,7 +858,91 @@ function App() {
     }
   }
 
-    if (screen === 'recovery') {
+  // -------------------------------------------------------
+  // Full-session expiry timer
+  // -------------------------------------------------------
+
+  useEffect(() => {
+    if (
+      screen !== 'dashboard' ||
+      !sessionExpiresAt
+    ) {
+      return undefined
+    }
+
+    const checkSessionTime = () => {
+      const expiresAt =
+        new Date(
+          sessionExpiresAt,
+        ).getTime()
+
+      const remainingMilliseconds =
+        expiresAt - Date.now()
+
+      if (
+        !Number.isFinite(expiresAt)
+      ) {
+        setDashboard(null)
+        setSessionExpiresAt(null)
+        setShowSessionWarning(false)
+        setScreen('login')
+
+        setStatus(
+          'Unable to verify your session. Sign in again.',
+        )
+
+        return
+      }
+
+      // Session expired.
+      if (
+        remainingMilliseconds <= 0
+      ) {
+        setShowSessionWarning(false)
+        setSessionExpiresAt(null)
+        setDashboard(null)
+        setScreen('login')
+
+        setStatus(
+          'Your session expired. Sign in again.',
+        )
+
+        return
+      }
+
+      // Show warning during final 2 minutes.
+      const warningThreshold =
+        2 * 60 * 1000
+
+      setShowSessionWarning(
+        remainingMilliseconds <=
+          warningThreshold,
+      )
+    }
+
+    checkSessionTime()
+
+    const intervalId =
+      window.setInterval(
+        checkSessionTime,
+        1000,
+      )
+
+    return () => {
+      window.clearInterval(
+        intervalId,
+      )
+    }
+  }, [
+    screen,
+    sessionExpiresAt,
+  ])
+
+  // -------------------------------------------------------
+  // Recovery-code screen
+  // -------------------------------------------------------
+
+  if (screen === 'recovery') {
     return (
       <main className="app-shell">
         <header className="site-header">
@@ -710,9 +976,10 @@ function App() {
             </h1>
 
             <p className="intro-copy">
-              Your password has already been verified.
-              Enter one unused recovery code to continue
-              with authenticator replacement.
+              Your password has already been
+              verified. Enter one unused recovery
+              code to continue with authenticator
+              replacement.
             </p>
           </div>
 
@@ -721,11 +988,14 @@ function App() {
               <h2>Recovery code</h2>
 
               <p>
-                Each recovery code can be used only once.
+                Each recovery code can be used only
+                once.
               </p>
             </div>
 
-            <form onSubmit={submitRecoveryCode}>
+            <form
+              onSubmit={submitRecoveryCode}
+            >
               <div className="field-group">
                 <label htmlFor="recovery-code">
                   Recovery code
@@ -752,6 +1022,18 @@ function App() {
               </button>
             </form>
 
+            <p className="form-footer">
+              <button
+                type="button"
+                className="link-button"
+                onClick={() =>
+                  navigateTo('login')
+                }
+              >
+                Return to sign in
+              </button>
+            </p>
+
             <div
               className="status-region"
               role="status"
@@ -765,7 +1047,14 @@ function App() {
     )
   }
 
-    if (screen === 'recovery-totp-enroll') {
+  // -------------------------------------------------------
+  // Recovery replacement TOTP screen
+  // -------------------------------------------------------
+
+  if (
+    screen ===
+    'recovery-totp-enroll'
+  ) {
     return (
       <main className="app-shell">
         <header className="site-header">
@@ -799,9 +1088,10 @@ function App() {
             </h1>
 
             <p className="intro-copy">
-              Add the setup key below to your authenticator.
-              Then enter the six-digit code generated by
-              the new authenticator.
+              Add the setup key below to your
+              authenticator. Then enter the
+              six-digit code generated by the new
+              authenticator.
             </p>
           </div>
 
@@ -810,7 +1100,8 @@ function App() {
               <h2>New setup key</h2>
 
               <p>
-                The previous authenticator is no longer valid.
+                The previous authenticator is no
+                longer valid.
               </p>
             </div>
 
@@ -836,7 +1127,11 @@ function App() {
               </div>
             </div>
 
-            <form onSubmit={verifyRecoveryEnrollment}>
+            <form
+              onSubmit={
+                verifyRecoveryEnrollment
+              }
+            >
               <div className="field-group">
                 <label htmlFor="recovery-token">
                   Six-digit authenticator code
@@ -880,7 +1175,7 @@ function App() {
   }
 
   // -------------------------------------------------------
-  // TOTP enrollment screen
+  // Normal TOTP enrollment screen
   // -------------------------------------------------------
 
   if (screen === 'totp-enroll') {
@@ -968,7 +1263,9 @@ function App() {
               </span>
             </div>
 
-            <form onSubmit={verifyEnrollment}>
+            <form
+              onSubmit={verifyEnrollment}
+            >
               <div className="field-group">
                 <label htmlFor="enrollment-token">
                   Six-digit authenticator code
@@ -1064,7 +1361,9 @@ function App() {
               </p>
             </div>
 
-            <form onSubmit={verifyLoginTOTP}>
+            <form
+              onSubmit={verifyLoginTOTP}
+            >
               <div className="field-group">
                 <label htmlFor="login-token">
                   Six-digit code
@@ -1094,6 +1393,24 @@ function App() {
               </button>
             </form>
 
+            <p className="form-footer">
+              Cannot use your authenticator?{' '}
+
+              <button
+                type="button"
+                className="link-button"
+                onClick={() => {
+                  setStatus(
+                    'Enter one unused recovery code.',
+                  )
+
+                  setScreen('recovery')
+                }}
+              >
+                Use a recovery code instead
+              </button>
+            </p>
+
             <div
               className="status-region"
               role="status"
@@ -1108,7 +1425,7 @@ function App() {
   }
 
   // -------------------------------------------------------
-  // Dashboard screen
+  // Dashboard
   // -------------------------------------------------------
 
   if (screen === 'dashboard') {
@@ -1168,6 +1485,33 @@ function App() {
               </p>
             </div>
 
+            {showSessionWarning && (
+              <div
+                className="session-warning"
+                role="alert"
+                aria-live="assertive"
+              >
+                <p>
+                  Your session will expire soon.
+                </p>
+
+                <button
+                  type="button"
+                  className="primary-button"
+                  onClick={
+                    extendCurrentSession
+                  }
+                  disabled={
+                    isExtendingSession
+                  }
+                >
+                  {isExtendingSession
+                    ? 'Extending...'
+                    : 'Continue session'}
+                </button>
+              </div>
+            )}
+
             <div
               className="status-region"
               role="status"
@@ -1182,7 +1526,7 @@ function App() {
   }
 
   // -------------------------------------------------------
-  // Login / registration screens
+  // Login / registration
   // -------------------------------------------------------
 
   const screenContent = {
@@ -1191,27 +1535,37 @@ function App() {
       title: 'Sign in to SecureByte',
       description:
         'Use your password first. The next step will ask for your authenticator code.',
-      action: 'Continue to verification',
-      footer: 'New to SecureByte?',
-      footerAction: 'Create an account',
-      footerTarget: 'register',
+      action:
+        'Continue to verification',
+      footer:
+        'New to SecureByte?',
+      footerAction:
+        'Create an account',
+      footerTarget:
+        'register',
     },
 
     register: {
-      eyebrow: 'Create your account',
-      title: 'Start with SecureByte',
+      eyebrow:
+        'Create your account',
+      title:
+        'Start with SecureByte',
       description:
         'Create an account with a strong password, then enroll your authenticator.',
-      action: 'Create account',
-      footer: 'Already have an account?',
-      footerAction: 'Return to sign in',
-      footerTarget: 'login',
+      action:
+        'Create account',
+      footer:
+        'Already have an account?',
+      footerAction:
+        'Return to sign in',
+      footerTarget:
+        'login',
     },
-
   }
 
   const currentScreen =
-    screenContent[screen] || screenContent.login
+    screenContent[screen] ||
+    screenContent.login
 
   return (
     <main className="app-shell">
@@ -1242,24 +1596,33 @@ function App() {
           </p>
 
           <h1 id="page-title">
-            Authentication that keeps the next step
-            visible.
+            Authentication that keeps the
+            next step visible.
           </h1>
 
           <p className="intro-copy">
-            SecureByte protects the dashboard with a
-            password and a time-based authenticator.
-            Each step stays restricted until the
-            server confirms it.
+            SecureByte protects the dashboard
+            with a password and a time-based
+            authenticator. Each step stays
+            restricted until the server
+            confirms it.
           </p>
 
           <div
             className="trust-list"
             aria-label="Security guarantees"
           >
-            <span>Server-controlled sessions</span>
-            <span>Accessible text setup</span>
-            <span>No browser-only access</span>
+            <span>
+              Server-controlled sessions
+            </span>
+
+            <span>
+              Accessible text setup
+            </span>
+
+            <span>
+              No browser-only access
+            </span>
           </div>
         </div>
 
@@ -1269,7 +1632,9 @@ function App() {
               {currentScreen.eyebrow}
             </p>
 
-            <h2>{currentScreen.title}</h2>
+            <h2>
+              {currentScreen.title}
+            </h2>
 
             <p>
               {currentScreen.description}
@@ -1319,10 +1684,13 @@ function App() {
                 <button
                   type="button"
                   className="text-action"
-                  aria-pressed={showPassword}
+                  aria-pressed={
+                    showPassword
+                  }
                   onClick={() =>
                     setShowPassword(
-                      (visible) => !visible,
+                      (visible) =>
+                        !visible,
                     )
                   }
                 >
@@ -1336,9 +1704,9 @@ function App() {
                 id="password-help"
                 className="field-help"
               >
-                Use 15 to 128 characters. Paste and
-                password-manager autofill are
-                supported.
+                Use 15 to 128 characters.
+                Paste and password-manager
+                autofill are supported.
               </span>
             </div>
 
@@ -1381,6 +1749,7 @@ function App() {
 
       <footer className="site-footer">
         <span>SecureByte</span>
+
         <span>
           Multi-factor authentication prototype
         </span>

@@ -3,6 +3,9 @@ import { randomUUID } from "node:crypto";
 import {
   revokeSession,
   clearSessionCookie,
+  extendSession,
+  refreshSessionCookie,
+  SESSION_COOKIE_NAME,
 } from "../services/session.service.js";
 
 import {
@@ -19,6 +22,69 @@ import {
  * req.authSession is loaded server-side from the session cookie.
  * User identity is never read from request headers or body.
  */
+
+/**
+ * POST /api/session/extend
+ *
+ * Extends the current authenticated session by another
+ * SESSION_LIFETIME_MINUTES from now.
+ */
+export async function extendCurrentSession(
+  req,
+  res,
+) {
+  try {
+    const extendedSession =
+      await extendSession(
+        req.authSession.sessionId,
+      );
+
+    if (!extendedSession) {
+      clearSessionCookie(res);
+
+      return res.status(401).json({
+        success: false,
+        error: {
+          type:
+            "AUTHENTICATION_REQUIRED",
+          message:
+            "Your session has expired. Sign in again.",
+        },
+      });
+    }
+
+    const existingToken =
+      req.cookies?.[SESSION_COOKIE_NAME];
+
+    refreshSessionCookie(
+      res,
+      existingToken,
+    );
+
+    return res.status(200).json({
+      success: true,
+      result: "SESSION_EXTENDED",
+      session: {
+        expires_at:
+          extendedSession.expires_at,
+      },
+    });
+  } catch (error) {
+    console.error(
+      "Session extension failed:",
+      error.message,
+    );
+
+    return res.status(500).json({
+      success: false,
+      error: {
+        type: "INTERNAL_ERROR",
+        message:
+          "Session could not be extended.",
+      },
+    });
+  }
+}
 
 /**
  * GET /api/dashboard
