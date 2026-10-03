@@ -1,7 +1,14 @@
 node_modules/
 .env
+.env.*
+!.env.example
+!.env.*.example
+*.pem
+*.key
+.npmrc
 *.log
 coverage/
+test-results/
 dist/
 .DS_Store
 pnpm-lock.yaml

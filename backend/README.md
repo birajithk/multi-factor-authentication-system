@@ -16,7 +16,7 @@ Backend for the SecureByte MFA system: registration, password first factor, TOTP
 
 ```bash
 cd backend
-npm install
+npm ci
 ```
 
 ## 2. Configure `.env`
@@ -139,6 +139,10 @@ curl -s -c $J -b $J -H 'Content-Type: application/json' -d '{}' -X POST $B/api/s
 - Never read or store session tokens in JavaScript; they are HttpOnly.
 
 ## Docs
+
+- Root [CI/CD & DevOps guide](../README.md#cicd--devops): Docker Compose, GitHub Actions, local CI commands and test safety requirements.
+- `npm run check`: validates backend JavaScript syntax and application imports.
+- `npm run db:test:prepare` and `npm test`: apply the real schema and run HTTP integration tests against a dedicated PostgreSQL test database. Follow the root guide; tests truncate test tables and reject non-test configuration.
 
 - `docs/password-authentication-test-evidence.md`: password module tests
 - `docs/password-benchmark.md`: Argon2id benchmark
