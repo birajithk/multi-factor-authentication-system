@@ -336,29 +336,35 @@ export async function revokeSession(sessionId) {
  *
  * Extends expiry to 30 minutes from NOW().
  */
-export async function extendSession(
-  sessionId,
-) {
+export const SESSION_EXTENSION_LIMIT = 10;
+
+export async function extendSession(sessionId) {
   const result = await pool.query(
     `
       UPDATE sessions s
-      SET expires_at =
-        NOW() + ($2 * INTERVAL '1 minute')
+      SET
+        expires_at =
+          NOW() + ($2 * INTERVAL '1 minute'),
+        extension_count =
+          extension_count + 1
       FROM users u
       WHERE s.session_id = $1
         AND s.user_id = u.user_id
         AND s.revoked_at IS NULL
         AND s.expires_at > NOW()
+        AND s.extension_count < $3
         AND u.account_status = 'ACTIVE'
       RETURNING
         s.session_id,
         s.user_id,
         s.created_at,
-        s.expires_at
+        s.expires_at,
+        s.extension_count
     `,
     [
       sessionId,
       SESSION_LIFETIME_MINUTES,
+      SESSION_EXTENSION_LIMIT,
     ],
   );
 

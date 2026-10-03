@@ -912,7 +912,7 @@ function App() {
 
       // Show warning during final 2 minutes.
       const warningThreshold =
-        2 * 60 * 1000
+        60 * 1000
 
       setShowSessionWarning(
         remainingMilliseconds <=
